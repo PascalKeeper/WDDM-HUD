@@ -23,12 +23,21 @@ function Write-Log([string]$m, [string]$l='INFO') {
 try {
     Write-Log "Uninstall starting (DryRun=$DryRun)" 'INFO'
 
-    # Stop running HUD
-    Get-Process -Name 'WddmHud' -ErrorAction SilentlyContinue | ForEach-Object {
-        if ($DryRun) { Write-Log "Would stop PID $($_.Id)" 'DRY' }
-        else {
-            Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
-            Write-Log "Stopped PID $($_.Id)" 'OK'
+    # Stop running HUD (UI + sensor-bridge) and purge ghosts
+    $ghost = Join-Path $InstallRoot 'scripts\Stop-WddmHudGhosts.ps1'
+    if (Test-Path $ghost) {
+        if ($DryRun) {
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $ghost -DryRun
+        } else {
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $ghost
+        }
+    } else {
+        Get-Process -Name 'WddmHud' -ErrorAction SilentlyContinue | ForEach-Object {
+            if ($DryRun) { Write-Log "Would stop PID $($_.Id)" 'DRY' }
+            else {
+                Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
+                Write-Log "Stopped PID $($_.Id)" 'OK'
+            }
         }
     }
 

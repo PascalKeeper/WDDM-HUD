@@ -55,6 +55,22 @@ cd /d F:\imonlinegaming\WDDM_HUD_by_pascalkeeper
 dotnet publish src\WddmHud\WddmHud.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o dist
 ```
 
+## Single-instance / ghost prevention
+
+| Mechanism | Detail |
+|-----------|--------|
+| UI mutex | `Global\WDDM_HUD_by_pascalkeeper_UI_v2` |
+| Bridge mutex | `Global\WDDM_HUD_by_pascalkeeper_BRIDGE_v2` |
+| On UI start | Kill other UI `WddmHud.exe` peers + any foreign-path old builds, then take mutex |
+| On bridge start | Kill other bridge instances only |
+| Abandoned mutex | Treated as acquire after crash |
+| `--kill-all` | Terminate every WddmHud.exe (UI+bridge) + purge `.sys` / stale state JSON |
+| Script | `scripts\Stop-WddmHudGhosts.ps1` (also removes debug bin `WddmHud.exe` remnants with `-AlsoRemoveBuildRemnants`) |
+| Installer/uninstall | Always stop ghosts before overwrite / remove |
+
+**Always launch** `F:\imonlinegaming\WDDM_HUD_by_pascalkeeper\dist\WddmHud.exe` (or Desktop shortcut).  
+Do not run `src\...\bin\...\WddmHud.exe` (framework-dependent build output).
+
 ## Version
 
-1.0.1 — Owner-drawn UI, LHM + optional elevated bridge, no N/A clutter, scale resize.
+1.0.2 — InstanceGuard ghost/old-version kill, --kill-all, installer ghost stop.

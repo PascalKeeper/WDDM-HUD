@@ -330,6 +330,22 @@ try {
     New-DirectorySafe -Path $BackupDir
     New-DirectorySafe -Path (Join-Path $InstallRoot 'config')
 
+    # Kill ghost / old-version instances BEFORE overwriting dist (file locks + no stacks)
+    $ghostScript = Join-Path $InstallRoot 'scripts\Stop-WddmHudGhosts.ps1'
+    if (Test-Path $ghostScript) {
+        Write-Log 'Stopping any running WDDM HUD instances (ghost/old version prevention)…' 'INFO'
+        if ($DryRun) {
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $ghostScript -DryRun -AlsoRemoveBuildRemnants
+        } else {
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $ghostScript -AlsoRemoveBuildRemnants
+        }
+    } else {
+        Get-Process -Name 'WddmHud' -ErrorAction SilentlyContinue | ForEach-Object {
+            if ($DryRun) { Write-Log "Would stop PID $($_.Id)" 'DRY' }
+            else { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue; Write-Log "Stopped PID $($_.Id)" 'OK' }
+        }
+    }
+
     $null = Save-PreInstallSnapshot
     Invoke-Build
     $exePath = Assert-DistPresent

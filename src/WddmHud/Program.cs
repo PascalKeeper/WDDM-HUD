@@ -7,7 +7,6 @@
 // =============================================================================
 
 using System;
-using System.Threading;
 using System.Windows.Forms;
 using WddmHud.Core;
 using WddmHud.Hardware;
@@ -17,33 +16,55 @@ namespace WddmHud
 {
     internal static class Program
     {
-        private const string MutexName = "Local\\WDDM_HUD_by_pascalkeeper_v1";
-
         [STAThread]
         private static void Main(string[] args)
         {
-            // Elevated sensor bridge mode — separate from UI instance
+            bool isBridge = Array.Exists(args, a =>
+                string.Equals(a, "--sensor-bridge", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(a, "-sensor-bridge", StringComparison.OrdinalIgnoreCase));
+
+            // --kill-all: cleanup utility (installer / scripts / emergency)
             if (Array.Exists(args, a =>
-                    string.Equals(a, "--sensor-bridge", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(a, "-sensor-bridge", StringComparison.OrdinalIgnoreCase)))
+                    string.Equals(a, "--kill-all", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(a, "-kill-all", StringComparison.OrdinalIgnoreCase)))
             {
+                int n = InstanceGuard.TerminateAllExcept(Environment.ProcessId);
+                InstanceGuard.PurgeStaleArtifactsStatic();
+                Logger.Info($"--kill-all complete; terminated {n} instance(s)");
+                Environment.ExitCode = 0;
+                return;
+            }
+
+            // Elevated sensor bridge — exclusive bridge mutex; never stacks bridges
+            if (isBridge)
+            {
+                using var bridgeGuard = InstanceGuard.Acquire(InstanceRole.SensorBridge, killPeers: true);
+                if (!bridgeGuard.IsPrimary)
+                {
+                    Logger.Warn("Sensor bridge: another bridge still owns the mutex after cleanup; exiting.");
+                    Environment.ExitCode = 3;
+                    return;
+                }
                 Environment.ExitCode = SensorBridgeHost.Run();
                 return;
             }
 
-            // Single instance — prevents stacked overlays and double tray icons
-            using var mutex = new Mutex(true, MutexName, out bool createdNew);
-            if (!createdNew)
+            // UI: kill ghosts/old versions, then exclusive UI mutex
+            using var uiGuard = InstanceGuard.Acquire(InstanceRole.Ui, killPeers: true);
+            if (!uiGuard.IsPrimary)
             {
                 try
                 {
                     MessageBox.Show(
-                        "WDDM HUD is already running.\nCheck the system tray (green status glyph).",
+                        "WDDM HUD is already running (could not replace the live instance).\n" +
+                        "Check the system tray, or run:\n" +
+                        "  WddmHud.exe --kill-all\n" +
+                        "then launch again.",
                         "WDDM HUD by pascalkeeper",
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Information);
                 }
-                catch { /* headless edge */ }
+                catch { /* headless */ }
                 return;
             }
 
@@ -51,7 +72,6 @@ namespace WddmHud
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            // Global exception gates — never silent-death the process without a log
             Application.ThreadException += (_, e) =>
             {
                 Logger.Error("UI thread exception", e.Exception);
@@ -66,7 +86,9 @@ namespace WddmHud
 
             Logger.Info("========== WDDM HUD starting ==========");
             Logger.Info("BaseDirectory=" + AppContext.BaseDirectory);
+            Logger.Info("ProcessPath=" + (Environment.ProcessPath ?? ""));
             Logger.Info("Root=" + AppPaths.Root);
+            Logger.Info("PID=" + Environment.ProcessId);
 
             try
             {
@@ -80,7 +102,7 @@ namespace WddmHud
                     MessageBox.Show(
                         "WDDM HUD failed to start:\n" + ex.GetType().Name + ": " + ex.Message +
                         "\n\nFull stack written to:\n" + AppPaths.LogFilePath +
-                        "\n\nTip: run dist\\WddmHud.exe again after update.",
+                        "\n\nTip: run dist\\WddmHud.exe --kill-all then launch again.",
                         "WDDM HUD by pascalkeeper",
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Error);
