@@ -1,0 +1,24 @@
+# Build
+**/bin/
+**/obj/
+**/.vs/
+*.user
+*.suo
+
+# Runtime
+logs/*.log
+logs/*.log.1
+config/hud_config.json
+config/hardware_snapshot.json
+backups/
+
+# Large publish intermediates (keep dist exe if committed optionally)
+src/WddmHud/bin/
+src/WddmHud/obj/
+
+# OS
+Thumbs.db
+Desktop.ini
+
+tools/_lhm_probe/
+
