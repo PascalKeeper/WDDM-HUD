@@ -22,3 +22,10 @@ Desktop.ini
 
 tools/_lhm_probe/
 
+
+dist/*.sys
+*.sys
+config/
+logs/
+backups/
+

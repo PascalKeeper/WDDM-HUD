@@ -117,19 +117,17 @@ namespace WddmHud.Hardware
                                 if (!s.Value.HasValue) continue;
                                 if (s.SensorType == SensorType.Temperature)
                                 {
-                                    string n = s.Name ?? "";
-                                    if (n.IndexOf("GPU", StringComparison.OrdinalIgnoreCase) >= 0
-                                        || n.IndexOf("Core", StringComparison.OrdinalIgnoreCase) >= 0
-                                        || intelGpuTemp == null)
-                                        intelGpuTemp = s.Value.Value;
+                                    // Rare on HD 630 — keep best-effort if ever exposed
+                                    intelGpuTemp = s.Value.Value;
                                 }
                                 else if (s.SensorType == SensorType.Load)
                                 {
                                     string n = s.Name ?? "";
-                                    if (n.IndexOf("D3D", StringComparison.OrdinalIgnoreCase) >= 0
-                                        || n.IndexOf("3D", StringComparison.OrdinalIgnoreCase) >= 0
-                                        || n.IndexOf("GPU Core", StringComparison.OrdinalIgnoreCase) >= 0
-                                        || intelGpuLoad == null)
+                                    // Prefer primary 3D engine load over decode/copy noise
+                                    if (n.Equals("D3D 3D", StringComparison.OrdinalIgnoreCase)
+                                        || n.IndexOf("GPU Core", StringComparison.OrdinalIgnoreCase) >= 0)
+                                        intelGpuLoad = s.Value.Value;
+                                    else if (intelGpuLoad == null && n.IndexOf("D3D", StringComparison.OrdinalIgnoreCase) >= 0)
                                         intelGpuLoad = s.Value.Value;
                                 }
                             }
