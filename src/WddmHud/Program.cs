@@ -3,7 +3,8 @@
 // Lightweight hybrid-graphics performance overlay for Windows 10.
 // Offline · Zero telemetry · Auto hardware detect · Tray dock · Always-on status
 //
-// Copyright (C) 2026 Joseph Rocco Peransi / pascalkeeper
+// Copyright (C) 2026 Joseph Rocco Peransi
+// www.github.com/pascalkeeper
 // =============================================================================
 
 using System;
@@ -101,6 +102,7 @@ namespace WddmHud
             };
 
             Logger.Info("========== WDDM HUD starting ==========");
+            Logger.Info(CopyrightNotice.Line);
             Logger.Info("BaseDirectory=" + AppContext.BaseDirectory);
             Logger.Info("ProcessPath=" + (Environment.ProcessPath ?? ""));
             Logger.Info("Root=" + AppPaths.Root);
@@ -235,8 +237,8 @@ namespace WddmHud
                         sample.DgpuName = hw.PrimaryDgpuName ?? "";
 
                     overlay.ApplyMetrics(sample, config);
-                    tray.SetStatusTooltip(sample.StatusText + " | dGPU " +
-                        (sample.DgpuTempC.HasValue ? sample.DgpuTempC.Value.ToString("0") + "C" : "n/a"));
+                    tray.SetStatusTooltip(sample.StatusText + " | 1070 " +
+                        (sample.DgpuTempC.HasValue ? config.FormatTemp(sample.DgpuTempC.Value, "0") : ""));
                 }
                 catch (Exception ex)
                 {

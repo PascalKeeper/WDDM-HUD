@@ -1,5 +1,7 @@
 // =============================================================================
 // WDDM HUD by pascalkeeper — System tray dock / minimize / quick actions
+// Copyright (C) 2026 Joseph Rocco Peransi
+// www.github.com/pascalkeeper
 // =============================================================================
 
 using System;
@@ -13,7 +15,10 @@ namespace WddmHud.UI
     {
         private readonly NotifyIcon _icon;
         private readonly OverlayForm _overlay;
+        private readonly ContextMenuStrip _menu;
         private bool _disposed;
+        private bool _allowMenuClose;
+        private DateTime _menuOpenedUtc;
 
         public event Action? ExitRequested;
         public event Action? RefreshHardwareRequested;
@@ -46,7 +51,14 @@ namespace WddmHud.UI
             // Visible only after icon is assigned — avoids tray NRE edge cases
             _icon.Visible = true;
 
-            var menu = new ContextMenuStrip();
+            var menu = new ContextMenuStrip
+            {
+                RenderMode = ToolStripRenderMode.System,
+                ShowImageMargin = false,
+                BackColor = SystemColors.Menu,
+                ForeColor = SystemColors.MenuText
+            };
+            _menu = menu;
             menu.Items.Add("Minimize to tray", null, (_, _) => _overlay.Hide());
             menu.Items.Add("Exit", null, (_, _) => ExitRequested?.Invoke());
             menu.Items.Add(new ToolStripSeparator());
@@ -92,8 +104,31 @@ namespace WddmHud.UI
             menu.Items.Add(runOnStartup);
             menu.Items.Add(doNotRunOnStartup);
             menu.Items.Add("Change color", null, (_, _) => _overlay.OpenColorWheel(Cursor.Position));
-            menu.Opening += (_, _) => RefreshStartupMarks();
+            var fahrenheit = new ToolStripMenuItem("Fahrenheit");
+            void RefreshFahrenheitMark()
+            {
+                fahrenheit.Checked = _overlay.UseFahrenheit;
+            }
+            fahrenheit.Click += (_, _) =>
+            {
+                _overlay.ToggleFahrenheit();
+                RefreshFahrenheitMark();
+            };
+            menu.Items.Add(fahrenheit);
+            menu.Opening += (_, _) =>
+            {
+                RefreshStartupMarks();
+                RefreshFahrenheitMark();
+            };
+            menu.Opened += (_, _) =>
+            {
+                _menuOpenedUtc = DateTime.UtcNow;
+                Logger.Info("Tray menu open. items=" + menu.Items.Count + " at " + menu.Bounds.X + "," + menu.Bounds.Y);
+            };
+            menu.Closing += OnMenuClosing;
+            menu.ItemClicked += (_, _) => { _allowMenuClose = true; };
             RefreshStartupMarks();
+            RefreshFahrenheitMark();
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Toggle click-through (play through HUD)", null, (_, _) => ToggleClickThroughRequested?.Invoke());
             menu.Items.Add("Refresh hardware detect", null, (_, _) => RefreshHardwareRequested?.Invoke());
@@ -102,9 +137,54 @@ namespace WddmHud.UI
             menu.Items.Add("Open install folder", null, (_, _) => OpenFolder(AppPaths.Root));
             menu.Items.Add("Open logs", null, (_, _) => OpenFolder(AppPaths.LogDirectory));
 
-            _icon.ContextMenuStrip = menu;
+            // The built-in right-click opens this menu and the no-activate HUD
+            // immediately takes it back down. Show it ourselves instead.
+            _icon.MouseUp += (_, e) =>
+            {
+                if (_disposed) return;
+                if (e.Button == MouseButtons.Right)
+                    ShowMenu();
+                else if (e.Button == MouseButtons.Left && _menu.Visible)
+                {
+                    _allowMenuClose = true;
+                    _menu.Close();
+                }
+            };
             _icon.DoubleClick += (_, _) => ShowOverlay();
             _icon.BalloonTipTitle = "WDDM HUD by pascalkeeper";
+            Logger.Info("Tray menu ready. items=" + _menu.Items.Count);
+        }
+
+        private void ShowMenu()
+        {
+            try
+            {
+                _allowMenuClose = false;
+                _menuOpenedUtc = DateTime.UtcNow;
+                if (_menu.Visible)
+                {
+                    _allowMenuClose = true;
+                    _menu.Close();
+                    return;
+                }
+                _menu.Show(Cursor.Position);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("Tray menu failed", ex);
+            }
+        }
+
+        private void OnMenuClosing(object? sender, ToolStripDropDownClosingEventArgs e)
+        {
+            if (_allowMenuClose)
+                return;
+            if (e.CloseReason != ToolStripDropDownCloseReason.AppFocusChange)
+                return;
+            bool justOpened = (DateTime.UtcNow - _menuOpenedUtc).TotalMilliseconds < 700;
+            bool overMenu = _menu.Bounds.Contains(Cursor.Position);
+            if (justOpened || overMenu)
+                e.Cancel = true;
         }
 
         public void ShowBalloon(string text, ToolTipIcon icon = ToolTipIcon.Info)
@@ -287,8 +367,12 @@ namespace WddmHud.UI
             _disposed = true;
             try
             {
+                _allowMenuClose = true;
+                if (_menu.Visible)
+                    _menu.Close();
                 _icon.Visible = false;
                 _icon.Dispose();
+                _menu.Dispose();
             }
             catch { /* ignore */ }
         }

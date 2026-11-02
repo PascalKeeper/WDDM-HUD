@@ -1,5 +1,7 @@
 // =============================================================================
 // WDDM HUD by pascalkeeper — Thread-safe rotating file logger
+// Copyright (C) 2026 Joseph Rocco Peransi
+// www.github.com/pascalkeeper
 // Zero network. Failures never crash the overlay.
 // =============================================================================
 

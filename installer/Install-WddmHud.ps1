@@ -36,7 +36,8 @@
     powershell -NoProfile -ExecutionPolicy Bypass -File .\Install-WddmHud.ps1 -DryRun
 
 .NOTES
-    Copyright (C) 2026 Joseph Rocco Peransi / pascalkeeper
+    Copyright (C) 2026 Joseph Rocco Peransi
+    www.github.com/pascalkeeper
     Requirements that a person must confirm are in docs\INSTALLER_NOTES.md.
     This script does not change Defender, the driver blocklist, the power plan,
     the panel refresh rate, or the default audio device.
@@ -51,7 +52,8 @@ param(
     [switch]$ApplyGameGpuPrefs,
     [switch]$CleanDuplicatePowerPlans,
     [switch]$NoShortcuts,
-    [switch]$StartAfterInstall
+    [switch]$StartAfterInstall,
+    [string]$InstallRoot = ''
 )
 
 Set-StrictMode -Version Latest
@@ -61,7 +63,11 @@ $ProgressPreference = 'SilentlyContinue'
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-$Script:InstallRoot = 'F:\imonlinegaming\WDDM_HUD_by_pascalkeeper'
+if ([string]::IsNullOrWhiteSpace($InstallRoot)) {
+    $Script:InstallRoot = 'F:\imonlinegaming\WDDM_HUD_by_pascalkeeper'
+} else {
+    $Script:InstallRoot = $InstallRoot.TrimEnd('\')
+}
 $Script:ProductName = 'WDDM HUD by pascalkeeper'
 $Script:ExeName     = 'WddmHud.exe'
 $Script:LogDir      = Join-Path $InstallRoot 'logs'
@@ -156,20 +162,26 @@ function Write-RequirementChecklist {
             Write-Log 'Defender reports a reboot is required. That reboot is not caused by this installer.' 'WARN'
         }
         $pref = Get-MpPreference -ErrorAction Stop
-        $needPaths = @(
-            (Join-Path $DistDir 'WddmHud.sys'),
-            (Join-Path $DistDir 'WinRing0.sys'),
-            (Join-Path $DistDir 'WinRing0x64.sys')
-        )
-        $needProc = Join-Path $DistDir 'WddmHud.exe'
-        $missing = @($needPaths | Where-Object { $pref.ExclusionPath -notcontains $_ })
-        if ($pref.ExclusionProcess -notcontains $needProc) { $missing += $needProc }
-        if ($mp.RealTimeProtectionEnabled -and $missing.Count -eq 0) {
-            Write-Log 'Real-time protection is on. HUD driver exclusions are present.' 'OK'
-        } elseif ($missing.Count -gt 0) {
-            Write-Log 'HUD Defender exclusions are missing. Run installer\Enable-RealtimeWithHudExclusions.ps1 as administrator.' 'WARN'
+        $knownPaths = @($pref.ExclusionPath).Count
+        $knownProcs = @($pref.ExclusionProcess).Count
+        if ($knownPaths -eq 0 -and $knownProcs -eq 0) {
+            Write-Log 'Defender exclusions are not visible from this window. An administrator run of installer\Enable-RealtimeWithHudExclusions.ps1 is the setup step.' 'INFO'
         } else {
-            Write-Log 'Real-time protection is off. Run installer\Enable-RealtimeWithHudExclusions.ps1 as administrator.' 'WARN'
+            $needPaths = @(
+                (Join-Path $DistDir 'WddmHud.sys'),
+                (Join-Path $DistDir 'WinRing0.sys'),
+                (Join-Path $DistDir 'WinRing0x64.sys')
+            )
+            $needProc = Join-Path $DistDir 'WddmHud.exe'
+            $missing = @($needPaths | Where-Object { $pref.ExclusionPath -notcontains $_ })
+            if ($pref.ExclusionProcess -notcontains $needProc) { $missing += $needProc }
+            if ($mp.RealTimeProtectionEnabled -and $missing.Count -eq 0) {
+                Write-Log 'Real-time protection is on. HUD driver exclusions are present.' 'OK'
+            } elseif ($missing.Count -gt 0) {
+                Write-Log 'HUD Defender exclusions are missing. Run installer\Enable-RealtimeWithHudExclusions.ps1 as administrator.' 'WARN'
+            } else {
+                Write-Log 'Real-time protection is off. Run installer\Enable-RealtimeWithHudExclusions.ps1 as administrator.' 'WARN'
+            }
         }
     } catch {
         Write-Log 'Could not read Defender status.' 'WARN'

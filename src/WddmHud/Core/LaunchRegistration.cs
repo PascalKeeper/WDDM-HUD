@@ -1,6 +1,7 @@
 // =============================================================================
 // WDDM HUD by pascalkeeper — Start Menu shortcut and sign-in launch
-// Copyright (C) 2026 Joseph Rocco Peransi / pascalkeeper
+// Copyright (C) 2026 Joseph Rocco Peransi
+// www.github.com/pascalkeeper
 //
 // Sign-in launch is HKCU Run only. No scheduled task. No admin. Default is off.
 // =============================================================================

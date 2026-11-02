@@ -1,6 +1,7 @@
 // =============================================================================
 // WDDM HUD by pascalkeeper — coin-sized color wheel
-// Copyright (C) 2026 Joseph Rocco Peransi / pascalkeeper
+// Copyright (C) 2026 Joseph Rocco Peransi
+// www.github.com/pascalkeeper
 //
 // A US half-dollar is 30.61 mm. A 60-inch 16:9 screen is about 1328 mm wide.
 // On a 1920-wide desktop that ratio is 44 pixels. The popup is that size.

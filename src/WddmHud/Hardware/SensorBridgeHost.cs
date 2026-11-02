@@ -1,5 +1,7 @@
 // =============================================================================
 // Elevated sensor bridge host — run: WddmHud.exe --sensor-bridge
+// Copyright (C) 2026 Joseph Rocco Peransi
+// www.github.com/pascalkeeper
 // WinRing0 load was granted for this app. The bridge opens LibreHardwareMonitor
 // for package temperature and any fan tachometer it can actually read.
 // EC CTMP remains the fallback when that driver does not open.

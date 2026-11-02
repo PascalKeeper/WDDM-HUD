@@ -1,8 +1,23 @@
 # WDDM HUD by pascalkeeper
 
-**Lightweight hybrid-graphics performance overlay for Windows 10**
+Copyright (C) 2026 Joseph Rocco Peransi  
+www.github.com/pascalkeeper
 
-Copyright (C) 2026 Joseph Rocco Peransi / pascalkeeper  
+WDDM HUD is a Windows 10 on-screen display for a laptop's own temperatures, onboard fan speeds, and the discrete GPU. It draws only rows that have a real reading. It stays in the system tray, and it does not inject into games.
+
+## What it was developed around
+
+This build was made on an Alienware 17 R4 running Windows 10 22H2. That machine has an Intel i7-7700HQ, Intel HD Graphics 630, and a GeForce GTX 1070. The 1070 is the discrete GPU wired to the external display. The two onboard blowers are controlled by the embedded controller, not by an NVIDIA fan header.
+
+The CPU package temperature comes from LibreHardwareMonitor. The blower speeds come from a read-only Dell SMM call through PawnIO. GPU temperature, load, and power come from `nvidia-smi`. The same Windows 10 x64 build can run on another PC with similar hardware. Fan RPM appears only when that PC's BIOS answers the same Dell SMM read.
+
+Install requirements are in [docs/INSTALLER_NOTES.md](docs/INSTALLER_NOTES.md).
+
+## One-click install
+
+Double-click `Install-WDDM-HUD.bat` in this folder.
+
+That file installs `dist\WddmHud.exe`, creates the Start Menu and Desktop shortcuts, and starts the HUD. It does not change the power plan, the display refresh rate, the default audio device, or Defender. Real-time protection can stay on when the exclusions in `installer\Enable-RealtimeWithHudExclusions.ps1` are present. Run that script once as administrator on a machine that needs the CPU package driver.
 
 Offline · Zero telemetry · Self-contained `.exe` · Auto hardware detect · System tray  
 
@@ -40,12 +55,9 @@ System requirements for a successful install, including Defender, the temperatur
 
 ## Quick install (end user)
 
-1. Prefer tree at:  
-   `F:\imonlinegaming\WDDM_HUD_by_pascalkeeper`
-2. Double-click:  
-   `installer\Install-WddmHud.bat`
-3. Choose option **[1] Full install**
-4. Launch from **Desktop** or **Start Menu** shortcut (**WddmHud.exe only**)
+1. Double-click `Install-WDDM-HUD.bat`.
+2. Launch from the **Desktop** or **Start Menu** shortcut. The shortcut opens `WddmHud.exe` only.
+3. The menu installer `installer\Install-WddmHud.bat` is still there for a dry-run or a rebuild.
 
 ### Installer features
 
@@ -131,4 +143,5 @@ Use at your own risk on hybrid laptops; monitor thermals.
 
 ## Author
 
-Joseph Rocco Peransi · github.com/pascalkeeper · x.com/xAIModerator
+Joseph Rocco Peransi  
+www.github.com/pascalkeeper

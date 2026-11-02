@@ -14,11 +14,11 @@
     <AssemblyName>WddmHud</AssemblyName>
     <RootNamespace>WddmHud</RootNamespace>
     <Version>1.0.3</Version>
-    <Authors>Joseph Rocco Peransi / pascalkeeper</Authors>
+    <Authors>Joseph Rocco Peransi</Authors>
     <Company>pascalkeeper</Company>
     <Product>WDDM HUD by pascalkeeper</Product>
     <Description>Lightweight hybrid-graphics performance overlay for Windows 10. Offline, zero telemetry.</Description>
-    <Copyright>Copyright (C) 2026 Joseph Rocco Peransi</Copyright>
+    <Copyright>Copyright (C) 2026 Joseph Rocco Peransi www.github.com/pascalkeeper</Copyright>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <LangVersion>latest</LangVersion>
     <!-- Harden single-file offline ship -->

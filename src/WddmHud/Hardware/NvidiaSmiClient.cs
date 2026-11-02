@@ -1,5 +1,7 @@
 // =============================================================================
 // WDDM HUD by pascalkeeper — nvidia-smi CSV query client
+// Copyright (C) 2026 Joseph Rocco Peransi
+// www.github.com/pascalkeeper
 // Offline, subprocess-based, CREATE_NO_WINDOW. Elite error handling.
 // =============================================================================
 

@@ -1,5 +1,7 @@
 // =============================================================================
 // WDDM HUD by pascalkeeper — Non-invasive FPS readers
+// Copyright (C) 2026 Joseph Rocco Peransi
+// www.github.com/pascalkeeper
 // Priority: RTSS shared memory (if Afterburner/RTSS running) → PresentMon CSV
 // Never injects into games. No instructional clutter in UI (caller hides empty).
 // =============================================================================

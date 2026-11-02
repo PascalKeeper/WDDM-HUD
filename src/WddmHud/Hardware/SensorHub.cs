@@ -1,5 +1,7 @@
 // =============================================================================
 // WDDM HUD by pascalkeeper — LibreHardwareMonitor sensor hub
+// Copyright (C) 2026 Joseph Rocco Peransi
+// www.github.com/pascalkeeper
 // Provides CPU package / core temps and Intel iGPU temps offline.
 // Fail-soft: if LHM cannot open (permissions/driver), returns nulls.
 // =============================================================================

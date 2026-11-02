@@ -1,5 +1,7 @@
 // =============================================================================
 // WDDM HUD by pascalkeeper — Clean owner-drawn overlay
+// Copyright (C) 2026 Joseph Rocco Peransi
+// www.github.com/pascalkeeper
 // - Only paints metrics that have real values (no N/A clutter)
 // - Resize scales content from a fixed design size; top-left stays put
 // - RAM temperature removed (no sensor on AW17R4)
@@ -140,6 +142,23 @@ namespace WddmHud.UI
         public void CommitAccent()
         {
             _config.Save();
+        }
+
+        public bool UseFahrenheit => (_paintConfig ?? _config).UseFahrenheit;
+
+        public void ToggleFahrenheit()
+        {
+            bool next = !_config.UseFahrenheit;
+            _config.UseFahrenheit = next;
+            if (_paintConfig != null && !ReferenceEquals(_paintConfig, _config))
+                _paintConfig.UseFahrenheit = next;
+            _config.Save();
+            try
+            {
+                if (IsHandleCreated)
+                    ComposeAndPush();
+            }
+            catch { /* ignore */ }
         }
 
         public void OpenColorWheel(Point cursor)
@@ -358,6 +377,18 @@ namespace WddmHud.UI
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Minimize to tray", null, (_, _) => Hide());
             menu.Items.Add("Exit", null, (_, _) => ExitRequested?.Invoke());
+            DateTime opened = DateTime.UtcNow;
+            bool allowClose = false;
+            menu.Opened += (_, _) => { opened = DateTime.UtcNow; allowClose = false; };
+            menu.ItemClicked += (_, _) => { allowClose = true; };
+            menu.Closing += (_, e) =>
+            {
+                if (allowClose || e.CloseReason != ToolStripDropDownCloseReason.AppFocusChange)
+                    return;
+                bool justOpened = (DateTime.UtcNow - opened).TotalMilliseconds < 700;
+                if (justOpened || menu.Bounds.Contains(Cursor.Position))
+                    e.Cancel = true;
+            };
             return menu;
         }
 
@@ -488,7 +519,7 @@ namespace WddmHud.UI
                 {
                     Color c = TempColor(m.CpuTempC.Value, cfg.CpuWarnC, cfg.CpuCritC);
                     string src = string.IsNullOrEmpty(m.CpuTempSource) ? "" : " " + m.CpuTempSource;
-                    rows.Add(($"CPU   {m.CpuTempC.Value,5:0.0}°C{src}   {m.CpuUsagePct,4:0}%", c));
+                    rows.Add(($"CPU   {cfg.FormatTemp(m.CpuTempC.Value),5}{src}   {m.CpuUsagePct,4:0}%", c));
                 }
                 else if (m.CpuUsagePct > 0.05)
                 {
@@ -504,7 +535,7 @@ namespace WddmHud.UI
                 {
                     Color c = TempColor(m.IgpuTempC.Value, cfg.IgpuWarnC, cfg.IgpuCritC);
                     string u = m.IgpuUtilPct.HasValue ? $"   {m.IgpuUtilPct.Value:0}%" : "";
-                    rows.Add(($"iGPU  {m.IgpuTempC.Value,5:0.0}°C{u}", c));
+                    rows.Add(($"iGPU  {cfg.FormatTemp(m.IgpuTempC.Value),5}{u}", c));
                 }
                 else if (m.IgpuUtilPct.HasValue)
                 {
@@ -515,7 +546,7 @@ namespace WddmHud.UI
             if (cfg.ShowDgpuTemp && m.DgpuTempC.HasValue)
             {
                 Color c = TempColor(m.DgpuTempC.Value, cfg.DgpuWarnC, cfg.DgpuCritC);
-                rows.Add(($"dGPU  {m.DgpuTempC.Value,5:0.0}°C", c));
+                rows.Add(($"dGPU  {cfg.FormatTemp(m.DgpuTempC.Value),5}", c));
             }
 
             if (cfg.ShowGpuUtil && m.DgpuUtilPct.HasValue)
@@ -533,7 +564,7 @@ namespace WddmHud.UI
             if (cfg.ShowPower && m.DgpuPowerW.HasValue)
             {
                 string lim = m.DgpuPowerLimitW.HasValue ? $" / {m.DgpuPowerLimitW.Value:0}W" : "W";
-                rows.Add(($"1070W {m.DgpuPowerW.Value,5:0.0}{lim}", Accent));
+                rows.Add(($"1070  {m.DgpuPowerW.Value,5:0.0}{lim}", Accent));
             }
 
             if (cfg.ShowSystemRam && m.SystemRamTotalGiB > 0.1)

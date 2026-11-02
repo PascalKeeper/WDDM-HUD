@@ -1,5 +1,7 @@
 // =============================================================================
 // WDDM HUD by pascalkeeper — Static hardware auto-detection model
+// Copyright (C) 2026 Joseph Rocco Peransi
+// www.github.com/pascalkeeper
 // =============================================================================
 
 using System;

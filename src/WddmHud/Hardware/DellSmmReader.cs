@@ -1,5 +1,7 @@
 // =============================================================================
 // Read-only Dell SMM fan speed.
+// Copyright (C) 2026 Joseph Rocco Peransi
+// www.github.com/pascalkeeper
 // Official signed PawnIO module DellSMM.bin 0.2.11 (LGPL-2.1, namazso/PawnIO.Modules).
 // The module runs the call on CPU 0 and refuses to load unless the BIOS
 // answers the Dell signature. This class sends command 0x02A3 only.

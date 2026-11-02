@@ -1,5 +1,7 @@
 // =============================================================================
 // WDDM HUD by pascalkeeper — Auto-detect CPU / iGPU / dGPU / RAM / power
+// Copyright (C) 2026 Joseph Rocco Peransi
+// www.github.com/pascalkeeper
 // Uses WMI + nvidia-smi path discovery. No third-party runtime deps.
 // =============================================================================
 

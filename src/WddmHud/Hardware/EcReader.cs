@@ -1,5 +1,7 @@
 // =============================================================================
 // Read-only sample of the Compal embedded controller through the driver that
+// Copyright (C) 2026 Joseph Rocco Peransi
+// www.github.com/pascalkeeper
 // is already loaded (EMSC, \\.\DosCPLEMSC). Command 0x80 only.
 // Never sends EC write 0x81, never touches port 0xB2, never opens a fan-set
 // method. The only address read here is DSDT field CTMP at 0xB0.

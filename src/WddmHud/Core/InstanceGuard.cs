@@ -1,5 +1,7 @@
 // =============================================================================
 // WDDM HUD by pascalkeeper — Single-instance + ghost / old-version eradication
+// Copyright (C) 2026 Joseph Rocco Peransi
+// www.github.com/pascalkeeper
 //
 // Goals:
 //  - Never stack multiple UI overlays or tray icons

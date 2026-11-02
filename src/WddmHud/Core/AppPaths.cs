@@ -1,5 +1,7 @@
 // =============================================================================
 // WDDM HUD by pascalkeeper — Application path resolution
+// Copyright (C) 2026 Joseph Rocco Peransi
+// www.github.com/pascalkeeper
 // All runtime state lives under F:\imonlinegaming\WDDM_HUD_by_pascalkeeper when
 // installed there; falls back to %LOCALAPPDATA%\WddmHud_by_pascalkeeper if the
 // install root is missing (portable-safe).

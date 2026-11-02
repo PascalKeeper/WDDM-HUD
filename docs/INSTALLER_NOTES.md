@@ -1,6 +1,7 @@
 # Installer notes — WDDM HUD by pascalkeeper
 
-Copyright (C) 2026 Joseph Rocco Peransi / pascalkeeper
+Copyright (C) 2026 Joseph Rocco Peransi  
+www.github.com/pascalkeeper
 
 These are the conditions a machine must meet before an install is successful. The installer does not change Defender, the vulnerable-driver blocklist, the power plan, the panel refresh rate, or the default audio device. It records the checks and warns. A person confirms the Defender and driver steps in Windows Security before the first elevated sensor bridge.
 
@@ -103,7 +104,7 @@ PawnIO must be installed before the bridge starts. The HUD does not download it.
 - Intel HD 630 on this chassis has no temperature reading. The iGPU row stays hidden.
 - FPS is shown only from RTSS shared memory or a PresentMon CSV. It is hidden when neither is present.
 - The overlay is per-pixel alpha, draggable, and resizable from the bottom-right corner. The plate is alpha 1 so it does not show on a black desktop. The first layout hugs the text. After a corner drag, the size is saved and the text scales.
-- Tray menu, top to bottom of the actions that matter: **Minimize to tray**, **Exit**, **Show HUD**, **Run on startup**, **Do not run on startup**, **Change color**. A killed process can leave a dead tray icon. `--kill-all` and each UI start sweep those icons.
+- Tray menu, top to bottom of the actions that matter: **Minimize to tray**, **Exit**, **Show HUD**, **Run on startup**, **Do not run on startup**, **Change color**, **Fahrenheit**. Fahrenheit is off until chosen. Temperatures stay in Celsius for the warn and crit colors. The 1070 power row is labeled `1070`. A killed process can leave a dead tray icon. `--kill-all` and each UI start sweep those icons.
 - Click-through can turn on while a known game is in front. Right-click the plate or the tray icon to turn it off.
 
 ## Start Menu, tray, and sign-in

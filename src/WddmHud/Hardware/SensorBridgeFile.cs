@@ -1,5 +1,7 @@
 // =============================================================================
 // Shared live_sensors.json schema between main HUD (asInvoker) and optional
+// Copyright (C) 2026 Joseph Rocco Peransi
+// www.github.com/pascalkeeper
 // elevated sensor bridge (--sensor-bridge). Lets CPU package temps work when
 // the user has approved a one-time elevation for LibreHardwareMonitor/MSR.
 // =============================================================================

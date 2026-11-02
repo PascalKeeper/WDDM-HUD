@@ -1,5 +1,7 @@
 // =============================================================================
 // WDDM HUD by pascalkeeper — Persistent user configuration (JSON, no deps)
+// Copyright (C) 2026 Joseph Rocco Peransi
+// www.github.com/pascalkeeper
 // =============================================================================
 
 using System;
@@ -124,6 +126,16 @@ namespace WddmHud.Core
 
         [JsonPropertyName("accent_b")]
         public int AccentB { get; set; } = 140;
+
+        [JsonPropertyName("use_fahrenheit")]
+        public bool UseFahrenheit { get; set; }
+
+        public string FormatTemp(double celsius, string alignment = "0.0")
+        {
+            double shown = UseFahrenheit ? (celsius * 9.0 / 5.0) + 32.0 : celsius;
+            string unit = UseFahrenheit ? "°F" : "°C";
+            return shown.ToString(alignment) + unit;
+        }
 
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
         {

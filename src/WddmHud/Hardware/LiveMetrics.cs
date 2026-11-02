@@ -1,5 +1,7 @@
 // =============================================================================
 // WDDM HUD by pascalkeeper — Live metrics model + sampling engine
+// Copyright (C) 2026 Joseph Rocco Peransi
+// www.github.com/pascalkeeper
 // Non-invasive (no game DLL injection). CPU/iGPU temps via LibreHardwareMonitor.
 // FPS via RTSS shared memory or optional PresentMon CSV — hidden when unavailable.
 // =============================================================================
