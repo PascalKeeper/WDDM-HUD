@@ -115,6 +115,16 @@ namespace WddmHud.Core
         [JsonPropertyName("font_size")]
         public float FontSize { get; set; } = 11f;
 
+        /// <summary>Healthy readout color. Default is the original green. Warn and crit stay fixed.</summary>
+        [JsonPropertyName("accent_r")]
+        public int AccentR { get; set; } = 0;
+
+        [JsonPropertyName("accent_g")]
+        public int AccentG { get; set; } = 255;
+
+        [JsonPropertyName("accent_b")]
+        public int AccentB { get; set; } = 140;
+
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
         {
             WriteIndented = true,
@@ -187,6 +197,15 @@ namespace WddmHud.Core
             if (PollIntervalMs > 5000) PollIntervalMs = 5000;
             if (FontSize < 8f) FontSize = 8f;
             if (FontSize > 22f) FontSize = 22f;
+            AccentR = Math.Clamp(AccentR, 0, 255);
+            AccentG = Math.Clamp(AccentG, 0, 255);
+            AccentB = Math.Clamp(AccentB, 0, 255);
+            if (AccentR + AccentG + AccentB < 48)
+            {
+                AccentR = 0;
+                AccentG = 255;
+                AccentB = 140;
+            }
             if (CpuWarnC >= CpuCritC) CpuCritC = CpuWarnC + 5;
             if (IgpuWarnC >= IgpuCritC) IgpuCritC = IgpuWarnC + 5;
             if (DgpuWarnC >= DgpuCritC) DgpuCritC = DgpuWarnC + 5;

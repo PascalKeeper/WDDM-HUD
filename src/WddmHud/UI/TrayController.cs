@@ -33,7 +33,7 @@ namespace WddmHud.UI
             // Build a simple green-dot icon at runtime (no external .ico dependency)
             try
             {
-                Icon? glyph = CreateGlyphIcon(Color.Lime);
+                Icon? glyph = CreateGlyphIcon(_overlay.CurrentAccent);
                 if (glyph != null)
                     _icon.Icon = glyph;
             }
@@ -51,6 +51,49 @@ namespace WddmHud.UI
             menu.Items.Add("Exit", null, (_, _) => ExitRequested?.Invoke());
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Show HUD", null, (_, _) => ShowOverlay());
+            menu.Items.Add(new ToolStripSeparator());
+
+            var runOnStartup = new ToolStripMenuItem("Run on startup");
+            var doNotRunOnStartup = new ToolStripMenuItem("Do not run on startup");
+            void RefreshStartupMarks()
+            {
+                bool on = LaunchRegistration.IsRunAtStartup();
+                runOnStartup.Checked = on;
+                doNotRunOnStartup.Checked = !on;
+            }
+            runOnStartup.Click += (_, _) =>
+            {
+                try
+                {
+                    LaunchRegistration.EnableRunAtStartup(LaunchRegistration.ResolveExePath());
+                    RefreshStartupMarks();
+                    ShowBalloon("WDDM HUD will open when you sign in.");
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error("Run on startup failed", ex);
+                    ShowBalloon("Could not turn on sign-in launch.", ToolTipIcon.Warning);
+                }
+            };
+            doNotRunOnStartup.Click += (_, _) =>
+            {
+                try
+                {
+                    LaunchRegistration.DisableRunAtStartup();
+                    RefreshStartupMarks();
+                    ShowBalloon("WDDM HUD will not open when you sign in.");
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error("Do not run on startup failed", ex);
+                    ShowBalloon("Could not turn off sign-in launch.", ToolTipIcon.Warning);
+                }
+            };
+            menu.Items.Add(runOnStartup);
+            menu.Items.Add(doNotRunOnStartup);
+            menu.Items.Add("Change color", null, (_, _) => _overlay.OpenColorWheel(Cursor.Position));
+            menu.Opening += (_, _) => RefreshStartupMarks();
+            RefreshStartupMarks();
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Toggle click-through (play through HUD)", null, (_, _) => ToggleClickThroughRequested?.Invoke());
             menu.Items.Add("Refresh hardware detect", null, (_, _) => RefreshHardwareRequested?.Invoke());

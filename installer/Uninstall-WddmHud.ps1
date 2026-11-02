@@ -53,6 +53,18 @@ try {
         }
     }
 
+    # Sign-in launch (tray "Run on startup"). HKCU only.
+    $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+    $runName = 'WDDM HUD by pascalkeeper'
+    $runProp = Get-ItemProperty -Path $runKey -Name $runName -ErrorAction SilentlyContinue
+    if ($null -ne $runProp) {
+        if ($DryRun) { Write-Log "Would remove sign-in launch value $runName" 'DRY' }
+        else {
+            Remove-ItemProperty -Path $runKey -Name $runName -ErrorAction SilentlyContinue
+            Write-Log 'Removed sign-in launch' 'OK'
+        }
+    }
+
     # Uninstall registry
     $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\WddmHud_by_pascalkeeper'
     if (Test-Path $key) {

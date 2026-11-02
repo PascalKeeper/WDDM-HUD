@@ -92,9 +92,76 @@ namespace WddmHud.UI
         private const byte AC_SRC_ALPHA = 0x01;
 
         private static readonly Color TextOk = Color.FromArgb(255, 0, 255, 140);
+
+        private Color Accent
+        {
+            get
+            {
+                HudConfig cfg = _paintConfig ?? _config;
+                int r = Math.Clamp(cfg.AccentR, 0, 255);
+                int g = Math.Clamp(cfg.AccentG, 0, 255);
+                int b = Math.Clamp(cfg.AccentB, 0, 255);
+                if (r + g + b < 48)
+                    return TextOk;
+                return Color.FromArgb(255, r, g, b);
+            }
+        }
+
+        private Color DimAccent
+        {
+            get
+            {
+                Color accent = Accent;
+                return Color.FromArgb(255, accent.R * 7 / 10, accent.G * 7 / 10, accent.B * 7 / 10);
+            }
+        }
+
+        public Color CurrentAccent => Accent;
+
+        public void PreviewAccent(Color color)
+        {
+            _config.AccentR = color.R;
+            _config.AccentG = color.G;
+            _config.AccentB = color.B;
+            if (_paintConfig != null && !ReferenceEquals(_paintConfig, _config))
+            {
+                _paintConfig.AccentR = color.R;
+                _paintConfig.AccentG = color.G;
+                _paintConfig.AccentB = color.B;
+            }
+            try
+            {
+                if (IsHandleCreated)
+                    ComposeAndPush();
+            }
+            catch { /* ignore */ }
+        }
+
+        public void CommitAccent()
+        {
+            _config.Save();
+        }
+
+        public void OpenColorWheel(Point cursor)
+        {
+            if (!IsHandleCreated)
+            {
+                _ = Handle;
+            }
+            BeginInvoke(new Action(() =>
+            {
+                try
+                {
+                    ColorWheelPopup.ShowDroppedUp(this, cursor);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error("Change color failed", ex);
+                }
+            }));
+        }
         private static readonly Color TextWarn = Color.FromArgb(255, 255, 190, 60);
         private static readonly Color TextCrit = Color.FromArgb(255, 255, 90, 90);
-        private static readonly Color TextDim = Color.FromArgb(255, 0, 180, 100);
         private static readonly Color PanelFill = Color.FromArgb(90, 8, 12, 8);
         private static readonly Color Outline = Color.FromArgb(255, 0, 0, 0);
 
@@ -378,11 +445,11 @@ namespace WddmHud.UI
 
             if (m == null)
             {
-                DrawLine(g, "●  starting…", 10, 10, TextOk, 11f * s, FontStyle.Bold);
+                DrawLine(g, "●  starting…", 10, 10, Accent, 11f * s, FontStyle.Bold);
                 return;
             }
 
-            Color statusColor = TextOk;
+            Color statusColor = Accent;
             if (string.Equals(m.StatusText, "THERMAL", StringComparison.OrdinalIgnoreCase))
                 statusColor = TextCrit;
             else if (string.Equals(m.StatusText, "WARM", StringComparison.OrdinalIgnoreCase))
@@ -412,7 +479,7 @@ namespace WddmHud.UI
             if (cfg.ShowFps && m.Fps.HasValue)
             {
                 string src = string.IsNullOrEmpty(m.FpsSource) ? "" : $"  {m.FpsSource}";
-                rows.Add(($"FPS   {m.Fps.Value,6:0.0}{src}", TextOk));
+                rows.Add(($"FPS   {m.Fps.Value,6:0.0}{src}", Accent));
             }
 
             if (cfg.ShowCpuTemp)
@@ -425,7 +492,7 @@ namespace WddmHud.UI
                 }
                 else if (m.CpuUsagePct > 0.05)
                 {
-                    rows.Add(($"CPU   {m.CpuUsagePct,5:0.0}%", TextOk));
+                    rows.Add(($"CPU   {m.CpuUsagePct,5:0.0}%", Accent));
                 }
                 AddFanRow(rows, m.Fan1Name, m.Fan1Rpm);
                 AddFanRow(rows, m.Fan2Name, m.Fan2Rpm);
@@ -441,7 +508,7 @@ namespace WddmHud.UI
                 }
                 else if (m.IgpuUtilPct.HasValue)
                 {
-                    rows.Add(($"iGPU  {m.IgpuUtilPct.Value,5:0}%", TextOk));
+                    rows.Add(($"iGPU  {m.IgpuUtilPct.Value,5:0}%", Accent));
                 }
             }
 
@@ -455,27 +522,27 @@ namespace WddmHud.UI
             {
                 string clk = m.DgpuClockMhz.HasValue ? $"  {m.DgpuClockMhz.Value:0}MHz" : "";
                 string ps = string.IsNullOrEmpty(m.DgpuPState) ? "" : $"  {m.DgpuPState}";
-                rows.Add(($"1070  {m.DgpuUtilPct.Value,5:0.0}%{clk}{ps}", TextOk));
+                rows.Add(($"1070  {m.DgpuUtilPct.Value,5:0.0}%{clk}{ps}", Accent));
             }
 
             if (cfg.ShowVram && m.VramUsedMiB.HasValue && m.VramTotalMiB.HasValue)
             {
-                rows.Add(($"VRAM  {m.VramUsedMiB.Value:0}/{m.VramTotalMiB.Value:0} MiB", TextOk));
+                rows.Add(($"VRAM  {m.VramUsedMiB.Value:0}/{m.VramTotalMiB.Value:0} MiB", Accent));
             }
 
             if (cfg.ShowPower && m.DgpuPowerW.HasValue)
             {
                 string lim = m.DgpuPowerLimitW.HasValue ? $" / {m.DgpuPowerLimitW.Value:0}W" : "W";
-                rows.Add(($"1070W {m.DgpuPowerW.Value,5:0.0}{lim}", TextOk));
+                rows.Add(($"1070W {m.DgpuPowerW.Value,5:0.0}{lim}", Accent));
             }
 
             if (cfg.ShowSystemRam && m.SystemRamTotalGiB > 0.1)
             {
-                rows.Add(($"RAM   {m.SystemRamUsedGiB:0.0}/{m.SystemRamTotalGiB:0.0} GiB  {m.SystemRamUsedPct:0}%", TextOk));
+                rows.Add(($"RAM   {m.SystemRamUsedGiB:0.0}/{m.SystemRamTotalGiB:0.0} GiB  {m.SystemRamUsedPct:0}%", Accent));
             }
 
             // Power source (compact)
-            rows.Add((m.OnAcPower ? "AC" : "BATTERY", m.OnAcPower ? TextDim : TextWarn));
+            rows.Add((m.OnAcPower ? "AC" : "BATTERY", m.OnAcPower ? DimAccent : TextWarn));
 
             foreach (var row in rows)
             {
@@ -517,19 +584,19 @@ namespace WddmHud.UI
             }));
         }
 
-        private static Color TempColor(double t, int warn, int crit)
+        private Color TempColor(double t, int warn, int crit)
         {
             if (t >= crit) return TextCrit;
             if (t >= warn) return TextWarn;
-            return TextOk;
+            return Accent;
         }
 
-        private static void AddFanRow(List<(string text, Color color)> rows, string name, int? rpm)
+        private void AddFanRow(List<(string text, Color color)> rows, string name, int? rpm)
         {
             if (rpm is not > 0)
                 return;
             string label = string.IsNullOrWhiteSpace(name) ? "Fan" : name.Trim();
-            rows.Add(($"{label}  {rpm.Value,5} rpm", TextOk));
+            rows.Add(($"{label}  {rpm.Value,5} rpm", Accent));
         }
 
         private Rectangle GripRect()
@@ -541,7 +608,7 @@ namespace WddmHud.UI
         private void DrawResizeCorner(Graphics g)
         {
             Rectangle grip = GripRect();
-            using var pen = new Pen(Color.FromArgb(210, TextOk), 1.5f);
+            using var pen = new Pen(Color.FromArgb(210, Accent), 1.5f);
             int right = grip.Right - 3;
             int bottom = grip.Bottom - 3;
             for (int i = 0; i < 3; i++)

@@ -102,8 +102,20 @@ PawnIO must be installed before the bridge starts. The HUD does not download it.
 - Intel HD 630 on this chassis has no temperature reading. The iGPU row stays hidden.
 - FPS is shown only from RTSS shared memory or a PresentMon CSV. It is hidden when neither is present.
 - The overlay is per-pixel alpha, draggable, and resizable from the bottom-right corner. The plate is alpha 1 so it does not show on a black desktop. The first layout hugs the text. After a corner drag, the size is saved and the text scales.
-- Tray menu, top to bottom of the actions that matter: **Minimize to tray**, **Exit**. A killed process can leave a dead tray icon. `--kill-all` and each UI start sweep those icons.
+- Tray menu, top to bottom of the actions that matter: **Minimize to tray**, **Exit**, **Show HUD**, **Run on startup**, **Do not run on startup**, **Change color**. A killed process can leave a dead tray icon. `--kill-all` and each UI start sweep those icons.
 - Click-through can turn on while a known game is in front. Right-click the plate or the tray icon to turn it off.
+
+## Start Menu, tray, and sign-in
+
+The file a person opens is `dist\WddmHud.exe`. It is a self-contained window program. Do not point a shortcut at a script.
+
+- Each time the HUD starts, it writes the Start Menu shortcut `WDDM HUD by pascalkeeper\WDDM HUD`. That shortcut targets `dist\WddmHud.exe`. The Start Menu search name is **WDDM HUD**.
+- The tray icon is the running program. Double-click it, or choose **Show HUD**, to open the overlay. **Minimize to tray** hides the overlay and leaves the icon. **Exit** closes the program.
+- **Run on startup** writes `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` value `WDDM HUD by pascalkeeper` to the quoted exe path. The next sign-in opens that exe. No administrator. No scheduled task.
+- **Do not run on startup** deletes that value. A new install leaves sign-in launch off until the person chooses **Run on startup**. The installer does not turn it on.
+- Uninstall removes that Run value and the Start Menu folder.
+- The checked item is the one in effect. Choosing **Run on startup** again rewrites the path, so a moved exe does not keep an old target.
+- **Change color** drops a color wheel up from the tray click. On a 1920-wide screen the popup is 44 pixels across. That is a half-dollar (30.61 mm) on a 60-inch 16:9 television (about 1328 mm wide). Drag on the wheel to recolor the healthy readout. Release to keep it. Escape or a click outside closes it. Temperatures at the warn and crit marks stay amber and red. The choice is saved in `config\hud_config.json` as `accent_r`, `accent_g`, and `accent_b`. Default is the original green, `0, 255, 140`.
 
 ## Similar hardware
 
@@ -119,10 +131,12 @@ Do not copy another laptop’s EC byte offsets into this installer. This 17 R4 d
 ## After install, these must pass
 
 1. `dist\WddmHud.exe` starts a window and one tray icon.
-2. The tray menu contains **Minimize to tray** and **Exit**.
-3. `config\live_sensors.json` is being rewritten. On this 17 R4 it shows a CPU temperature and two fan RPM values between 1 and 20000. `source` is `lhm` when the package driver is open.
-4. The log contains `Dell SMM open` with the indexes that answered, then `OverlayForm ready`, and no unhandled exception.
-5. `WddmHud.exe --kill-all` stops the UI and the bridge and leaves no dead tray icon.
-6. The active power plan is the same plan as before install.
+2. The tray menu contains **Minimize to tray**, **Exit**, **Run on startup**, **Do not run on startup**, and **Change color**.
+3. Start Menu has **WDDM HUD** and that shortcut targets `dist\WddmHud.exe`.
+4. `config\live_sensors.json` is being rewritten. On this 17 R4 it shows a CPU temperature and two fan RPM values between 1 and 20000. `source` is `lhm` when the package driver is open.
+5. The log contains `Dell SMM open` with the indexes that answered, then `OverlayForm ready`, and no unhandled exception.
+6. `WddmHud.exe --kill-all` stops the UI and the bridge and leaves no dead tray icon.
+7. The active power plan is the same plan as before install.
+8. Sign-in launch is off unless the person chose **Run on startup**.
 
 On the proven machine a good sample looks like: CPU package in the 30s or 40s at idle, Fan around 4600, Fan 2 around 4500, with the BIOS in Performance fan mode. Those speeds are the top step, not a sign that the installer set a fan.

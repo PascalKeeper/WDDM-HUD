@@ -36,6 +36,21 @@ namespace WddmHud
                 return;
             }
 
+            // Exercises the same HKCU Run door the tray uses, then restores the prior value.
+            if (Array.Exists(args, a =>
+                    string.Equals(a, "--startup-selftest", StringComparison.OrdinalIgnoreCase)))
+            {
+                Environment.ExitCode = LaunchRegistration.RunStartupSelfTest();
+                return;
+            }
+
+            if (Array.Exists(args, a =>
+                    string.Equals(a, "--color-selftest", StringComparison.OrdinalIgnoreCase)))
+            {
+                Environment.ExitCode = ColorWheelMath.SelfTest();
+                return;
+            }
+
             // Elevated sensor bridge — exclusive bridge mutex; never stacks bridges
             if (isBridge)
             {
@@ -139,6 +154,15 @@ namespace WddmHud
 
             TrayController.DismissGhostIcons();
             Logger.Info("RunApp: loading config");
+            try
+            {
+                string link = LaunchRegistration.EnsureStartMenuShortcut();
+                Logger.Info("Start Menu ready: " + link);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("Start Menu shortcut failed", ex);
+            }
             HudConfig config = HudConfig.Load();
             if (config == null)
                 throw new InvalidOperationException("HudConfig.Load returned null");
@@ -206,9 +230,9 @@ namespace WddmHud
                     sample.OnAcPower = HardwareDetector.Detect(forceRefresh: false).OnAcPower;
                     sample.HybridDetected = hw.HasHybridGraphics;
                     if (string.IsNullOrEmpty(sample.IgpuName) || sample.IgpuName == "N/A")
-                        sample.IgpuName = hw.PrimaryIgpuName;
+                        sample.IgpuName = hw.PrimaryIgpuName ?? "";
                     if (string.IsNullOrEmpty(sample.DgpuName) || sample.DgpuName == "N/A")
-                        sample.DgpuName = hw.PrimaryDgpuName;
+                        sample.DgpuName = hw.PrimaryDgpuName ?? "";
 
                     overlay.ApplyMetrics(sample, config);
                     tray.SetStatusTooltip(sample.StatusText + " | dGPU " +

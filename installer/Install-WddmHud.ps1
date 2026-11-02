@@ -178,6 +178,17 @@ function Write-RequirementChecklist {
     } else {
         Write-Log 'PawnIO service was not found. Install official PawnIO 2.2.0 with -install -silent before expecting fan RPM. Do not pass -unrestricted.' 'WARN'
     }
+
+    $runName = 'WDDM HUD by pascalkeeper'
+    $runValue = $null
+    try {
+        $runValue = (Get-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name $runName -ErrorAction SilentlyContinue).$runName
+    } catch { }
+    if ([string]::IsNullOrWhiteSpace([string]$runValue)) {
+        Write-Log 'Sign-in launch is off. The tray item Run on startup turns it on. This installer does not.' 'OK'
+    } else {
+        Write-Log "Sign-in launch is already on: $runValue" 'INFO'
+    }
 }
 
 function New-DirectorySafe {
