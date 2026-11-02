@@ -155,10 +155,21 @@ function Write-RequirementChecklist {
         if ($mp.RebootRequired) {
             Write-Log 'Defender reports a reboot is required. That reboot is not caused by this installer.' 'WARN'
         }
-        if ($mp.RealTimeProtectionEnabled) {
-            Write-Log 'Real-time protection is on. CPU package temperature needs the WddmHud.sys exclusion or Defender can quarantine the driver. Fan RPM does not use that driver.' 'WARN'
+        $pref = Get-MpPreference -ErrorAction Stop
+        $needPaths = @(
+            (Join-Path $DistDir 'WddmHud.sys'),
+            (Join-Path $DistDir 'WinRing0.sys'),
+            (Join-Path $DistDir 'WinRing0x64.sys')
+        )
+        $needProc = Join-Path $DistDir 'WddmHud.exe'
+        $missing = @($needPaths | Where-Object { $pref.ExclusionPath -notcontains $_ })
+        if ($pref.ExclusionProcess -notcontains $needProc) { $missing += $needProc }
+        if ($mp.RealTimeProtectionEnabled -and $missing.Count -eq 0) {
+            Write-Log 'Real-time protection is on. HUD driver exclusions are present.' 'OK'
+        } elseif ($missing.Count -gt 0) {
+            Write-Log 'HUD Defender exclusions are missing. Run installer\Enable-RealtimeWithHudExclusions.ps1 as administrator.' 'WARN'
         } else {
-            Write-Log 'Real-time protection is off. Leave it off unless the driver exclusions in INSTALLER_NOTES.md are confirmed.' 'OK'
+            Write-Log 'Real-time protection is off. Run installer\Enable-RealtimeWithHudExclusions.ps1 as administrator.' 'WARN'
         }
     } catch {
         Write-Log 'Could not read Defender status.' 'WARN'

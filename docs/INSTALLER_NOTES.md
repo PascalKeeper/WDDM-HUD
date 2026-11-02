@@ -58,12 +58,13 @@ Defender has quarantined this class of driver before. A successful install needs
 
 1. **Memory integrity (HVCI) is off.** On the proven machine it was already 0. The temperature driver does not load while memory integrity is on.
 2. **Microsoft vulnerable-driver blocklist is off.** Registry value `HKLM\SYSTEM\CurrentControlSet\Control\CI\Config\VulnerableDriverBlocklistEnable` is DWORD `0`. On this PC the driver loaded in the same session after that value was set, with no reboot. On a PC where the blocklist has already refused the driver, one reboot may be required before the first successful load. The installer does not set this value.
-3. **Real-time protection stays off, or the driver files are excluded.** Exclusions used on this PC:
+3. **Real-time protection stays on.** Run `installer\Enable-RealtimeWithHudExclusions.ps1` as administrator once. It turns real-time protection on and adds only these exclusions:
+   - `dist\WddmHud.sys`
    - `dist\WinRing0.sys`
    - `dist\WinRing0x64.sys`
-   - `dist\WddmHud.sys`
-   If real-time protection is on and those files are not excluded, Defender can quarantine the driver. Fan RPM does not use this driver. CPU package temperature does. If the driver is missing, the 17 R4 can fall back to EC field CTMP. That fallback is labeled `EC`, not package.
-4. **Tamper Protection may be on.** Turning it on does not ask for a reboot. It does not unload a driver that is already loaded. It does not turn the vulnerable-driver blocklist back on. Leave real-time protection off when you flip Tamper Protection, unless the exclusions above are confirmed. Tamper Protection blocks later scripted changes to Defender settings. The Windows Security app can still change them.
+   - process `dist\WddmHud.exe`
+   It does not change Tamper Protection or the blocklist. A good reading still has `source` = `lhm` and both fan RPM values. If `source` is `ec`, the package driver was removed and that script needs to be run again before the next bridge start.
+4. **Tamper Protection may be on** after the exclusions exist and real-time protection is on. Turning it on does not ask for a reboot and does not unload the driver.
 5. **Cleanup must not delete the driver.** InstanceGuard and `scripts\Stop-WddmHudGhosts.ps1` skip `WinRing0*` and `WddmHud.sys`. Any other `*.sys` next to the exe is still removed.
 
 The sensor bridge is started once with UAC (`WddmHud.exe --sensor-bridge`). After `config\live_sensors.json` is fresh, later HUD launches do not ask again.
