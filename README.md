@@ -36,6 +36,8 @@ Designed for **Alienware 17 R4** class hybrids (**Intel iGPU + NVIDIA Pascal dGP
 
 ---
 
+System requirements for a successful install, including Defender, the temperature driver, PawnIO fan reads, and what must not be changed, are in [docs/INSTALLER_NOTES.md](docs/INSTALLER_NOTES.md).
+
 ## Quick install (end user)
 
 1. Prefer tree at:  

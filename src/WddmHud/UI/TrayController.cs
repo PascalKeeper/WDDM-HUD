@@ -47,17 +47,17 @@ namespace WddmHud.UI
             _icon.Visible = true;
 
             var menu = new ContextMenuStrip();
-            menu.Items.Add("Show HUD", null, (_, _) => ShowOverlay());
-            menu.Items.Add("Hide HUD", null, (_, _) => _overlay.Hide());
+            menu.Items.Add("Minimize to tray", null, (_, _) => _overlay.Hide());
+            menu.Items.Add("Exit", null, (_, _) => ExitRequested?.Invoke());
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("Toggle click-through", null, (_, _) => ToggleClickThroughRequested?.Invoke());
+            menu.Items.Add("Show HUD", null, (_, _) => ShowOverlay());
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("Toggle click-through (play through HUD)", null, (_, _) => ToggleClickThroughRequested?.Invoke());
             menu.Items.Add("Refresh hardware detect", null, (_, _) => RefreshHardwareRequested?.Invoke());
-            menu.Items.Add("Enable CPU sensors (admin once)…", null, (_, _) => TryStartSensorBridge());
+            menu.Items.Add("EC CPU temperature…", null, (_, _) => StartEcBridge());
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Open install folder", null, (_, _) => OpenFolder(AppPaths.Root));
             menu.Items.Add("Open logs", null, (_, _) => OpenFolder(AppPaths.LogDirectory));
-            menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("Exit", null, (_, _) => ExitRequested?.Invoke());
 
             _icon.ContextMenuStrip = menu;
             _icon.DoubleClick += (_, _) => ShowOverlay();
@@ -119,11 +119,12 @@ namespace WddmHud.UI
         }
 
         /// <summary>
-        /// Starts an elevated copy of this EXE with --sensor-bridge so CPU package
-        /// temps can use the MSR/kernel path. Main HUD stays non-elevated.
-        /// HD 630 typically has no iGPU temperature sensor — bridge still reports load.
+        /// Starts an elevated copy of this EXE with --sensor-bridge. The bridge
+        /// reads sensors through the granted WinRing0 driver, and falls back to
+        /// the EC temperature if that driver does not open. It does not set fan
+        /// speed. Main HUD stays non-elevated.
         /// </summary>
-        private void TryStartSensorBridge()
+        public void StartEcBridge()
         {
             try
             {
@@ -136,11 +137,11 @@ namespace WddmHud.UI
                     FileName = exe,
                     Arguments = "--sensor-bridge",
                     UseShellExecute = true,
-                    Verb = "runas", // UAC elevation prompt — user may cancel
+                    Verb = "runas",
                     WorkingDirectory = System.IO.Path.GetDirectoryName(exe) ?? AppContext.BaseDirectory
                 };
                 System.Diagnostics.Process.Start(psi);
-                ShowBalloon("Sensor bridge elevation requested.\nApprove UAC for CPU package temps.\n(iGPU temp is often unavailable on HD 630.)");
+                ShowBalloon("Approve UAC once. The bridge reads the EC CPU temperature only. It does not load a driver and it does not change fan speed.");
                 Logger.Info("Sensor bridge elevation launched: " + exe);
             }
             catch (Exception ex)
@@ -182,6 +183,60 @@ namespace WddmHud.UI
 
         [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
         private static extern bool DestroyIcon(IntPtr hIcon);
+
+        /// <summary>
+        /// Explorer keeps a tray icon after a process is killed. Moving the
+        /// pointer across the tray toolbars drops icons whose process is gone.
+        /// </summary>
+        public static void DismissGhostIcons()
+        {
+            try
+            {
+                IntPtr tray = FindWindow("Shell_TrayWnd", null);
+                IntPtr notify = FindWindowEx(tray, IntPtr.Zero, "TrayNotifyWnd", null);
+                IntPtr pager = FindWindowEx(notify, IntPtr.Zero, "SysPager", null);
+                SweepToolbar(FindWindowEx(pager, IntPtr.Zero, "ToolbarWindow32", null));
+                SweepToolbar(FindWindowEx(notify, IntPtr.Zero, "ToolbarWindow32", null));
+
+                IntPtr overflow = FindWindow("NotifyIconOverflowWindow", null);
+                SweepToolbar(FindWindowEx(overflow, IntPtr.Zero, "ToolbarWindow32", null));
+            }
+            catch (Exception ex)
+            {
+                Logger.Debug("Tray ghost sweep failed: " + ex.Message);
+            }
+        }
+
+        private static void SweepToolbar(IntPtr toolbar)
+        {
+            if (toolbar == IntPtr.Zero)
+                return;
+            if (!GetClientRect(toolbar, out RECT rect))
+                return;
+            for (int y = 0; y < rect.Bottom; y += 4)
+            {
+                for (int x = 0; x < rect.Right; x += 4)
+                    SendMessage(toolbar, 0x0200, IntPtr.Zero, (IntPtr)((y << 16) | (x & 0xFFFF)));
+            }
+        }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        private static extern IntPtr FindWindow(string? className, string? windowName);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        private static extern IntPtr FindWindowEx(IntPtr parent, IntPtr childAfter, string? className, string? windowName);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool GetClientRect(IntPtr hWnd, out RECT rect);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct RECT
+        {
+            public int Left, Top, Right, Bottom;
+        }
 
         public void Dispose()
         {

@@ -170,7 +170,10 @@ namespace WddmHud.Hardware
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
+                    RedirectStandardInput = true,
                     CreateNoWindow = true,
+                    WindowStyle = ProcessWindowStyle.Hidden,
+                    ErrorDialog = false,
                     StandardOutputEncoding = Encoding.UTF8
                 };
 

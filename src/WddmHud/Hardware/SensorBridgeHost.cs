@@ -1,12 +1,11 @@
 // =============================================================================
 // Elevated sensor bridge host — run: WddmHud.exe --sensor-bridge
-// Polls LibreHardwareMonitor and writes config\live_sensors.json for the HUD.
-// Prefer one elevated instance; main overlay stays asInvoker (no UAC spam).
+// WinRing0 load was granted for this app. The bridge opens LibreHardwareMonitor
+// for package temperature and any fan tachometer it can actually read.
+// EC CTMP remains the fallback when that driver does not open.
+// This host does not send a fan-speed write.
 // =============================================================================
 
-using System;
-using System.Threading;
-using LibreHardwareMonitor.Hardware;
 using WddmHud.Core;
 
 namespace WddmHud.Hardware
@@ -15,143 +14,101 @@ namespace WddmHud.Hardware
     {
         public static int Run()
         {
-            Logger.Info("Sensor bridge starting (elevated path for CPU package temps when possible).");
-            using var cts = new CancellationTokenSource();
-            Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+            Logger.Info("Sensor bridge starting. WinRing0 granted. No fan-speed write.");
+            using var hub = new SensorHub();
+            hub.EnsureOpened();
 
-            Computer? computer = null;
-            try
+            using var smm = new DellSmmReader();
+            if (!smm.TryOpen(out string smmError))
+                Logger.Warn("Dell SMM fan read unavailable: " + smmError);
+
+            using var ec = new EcReader();
+            bool ecOpen = false;
+            if (!hub.IsAvailable)
             {
-                computer = new Computer
-                {
-                    IsCpuEnabled = true,
-                    IsGpuEnabled = true,
-                    IsMotherboardEnabled = true,
-                    IsMemoryEnabled = false,
-                    IsControllerEnabled = false,
-                    IsNetworkEnabled = false,
-                    IsStorageEnabled = false
-                };
-                computer.Open();
-                Logger.Info("Sensor bridge: LHM opened.");
-            }
-            catch (Exception ex)
-            {
-                Logger.Error("Sensor bridge LHM open failed", ex);
-                return 2;
+                ecOpen = ec.TryOpen(out string error);
+                if (!ecOpen)
+                    Logger.Warn("EC open failed (" + error + "). CPU temperature stays unavailable.");
             }
 
-            try
+            bool announced = false;
+            DateTime nextHeavyUtc = DateTime.MinValue;
+            double? cachedCpu = null;
+            double? cachedIgpu = null;
+            double? cachedIgpuLoad = null;
+            string cachedSource = "";
+            int? shownFan1 = null;
+            int? shownFan2 = null;
+            while (true)
             {
-                while (!cts.IsCancellationRequested)
+                try
                 {
-                    double? cpu = null, igpuT = null, igpuL = null, dgpu = null, hotspot = null;
-                    try
+                    var file = new LiveSensorFile { Utc = DateTime.UtcNow, Source = "" };
+                    bool heavy = DateTime.UtcNow >= nextHeavyUtc;
+                    if (heavy)
                     {
-                        foreach (IHardware hw in computer.Hardware)
+                        if (hub.IsAvailable)
                         {
-                            UpdateAll(hw);
-                            if (hw.HardwareType == HardwareType.Cpu)
+                            hub.Sample(out double? cpu, out double? igpu, out double? igpuLoad);
+                            cachedIgpu = igpu;
+                            cachedIgpuLoad = igpuLoad;
+                            if (cpu.HasValue && cpu.Value > 0 && cpu.Value < 125)
                             {
-                                foreach (var s in EnumTemps(hw))
-                                {
-                                    string n = s.Name ?? "";
-                                    if (n.IndexOf("Package", StringComparison.OrdinalIgnoreCase) >= 0 && s.Value.HasValue)
-                                        cpu = s.Value;
-                                    else if (n.IndexOf("Core Max", StringComparison.OrdinalIgnoreCase) >= 0 && s.Value.HasValue)
-                                        cpu ??= s.Value;
-                                    else if (n.IndexOf("Core Average", StringComparison.OrdinalIgnoreCase) >= 0 && s.Value.HasValue)
-                                        cpu ??= s.Value;
-                                    else if (n.StartsWith("CPU Core #", StringComparison.OrdinalIgnoreCase) && s.Value.HasValue)
-                                    {
-                                        if (!cpu.HasValue || s.Value > cpu) cpu = s.Value;
-                                    }
-                                }
-                            }
-                            else if (hw.HardwareType == HardwareType.GpuIntel)
-                            {
-                                foreach (ISensor s in AllSensors(hw))
-                                {
-                                    if (s.SensorType == SensorType.Temperature && s.Value.HasValue)
-                                        igpuT = s.Value;
-                                    if (s.SensorType == SensorType.Load && s.Value.HasValue)
-                                    {
-                                        string n = s.Name ?? "";
-                                        if (n.IndexOf("3D", StringComparison.OrdinalIgnoreCase) >= 0)
-                                            igpuL = s.Value;
-                                    }
-                                }
-                            }
-                            else if (hw.HardwareType == HardwareType.GpuNvidia)
-                            {
-                                foreach (ISensor s in AllSensors(hw))
-                                {
-                                    if (s.SensorType != SensorType.Temperature || !s.Value.HasValue) continue;
-                                    string n = s.Name ?? "";
-                                    if (n.IndexOf("Hot Spot", StringComparison.OrdinalIgnoreCase) >= 0
-                                        || n.IndexOf("Hotspot", StringComparison.OrdinalIgnoreCase) >= 0)
-                                        hotspot = s.Value;
-                                    else if (n.IndexOf("Core", StringComparison.OrdinalIgnoreCase) >= 0)
-                                        dgpu = s.Value;
-                                }
+                                cachedCpu = cpu.Value;
+                                cachedSource = "lhm";
                             }
                         }
+                        else if (ecOpen)
+                        {
+                            int? ctmp = ec.ReadCpuTempC();
+                            if (ctmp.HasValue)
+                            {
+                                cachedCpu = ctmp.Value;
+                                cachedSource = "ec-ctmp";
+                                file.Note = "DSDT ECMM CTMP. Not fan RPM.";
+                            }
+                        }
+                        nextHeavyUtc = DateTime.UtcNow.AddSeconds(1);
                     }
-                    catch (Exception ex)
+
+                    if (cachedCpu.HasValue)
                     {
-                        Logger.Warn("Sensor bridge sample error: " + ex.Message);
+                        file.CpuTempC = cachedCpu;
+                        file.Source = cachedSource;
+                    }
+                    file.IgpuTempC = cachedIgpu;
+                    file.IgpuUtilPct = cachedIgpuLoad;
+
+                    if (smm.IsOpen)
+                    {
+                        smm.Read(out int? smm0, out int? smm1);
+                        file.Fan1Name = "Fan";
+                        file.Fan1Rpm = smm0 is > 0 and < 20000 ? smm0 : shownFan1;
+                        file.Fan2Name = "Fan 2";
+                        file.Fan2Rpm = smm1 is > 0 and < 20000 ? smm1 : shownFan2;
                     }
 
-                    string note = "";
-                    if (!cpu.HasValue)
-                        note = "CPU package temp unavailable (kernel/MSR path). iGPU temp often unexposed on HD 630.";
-                    if (!igpuT.HasValue)
-                        note = (note + " No iGPU temperature sensor exposed.").Trim();
-
-                    SensorBridgeFile.Write(new LiveSensorFile
+                    bool fanChanged = file.Fan1Rpm != shownFan1 || file.Fan2Rpm != shownFan2;
+                    if ((heavy || fanChanged) && (file.CpuTempC.HasValue || file.Fan1Rpm.HasValue))
                     {
-                        Utc = DateTime.UtcNow,
-                        CpuTempC = cpu,
-                        IgpuTempC = igpuT,
-                        IgpuUtilPct = igpuL,
-                        DgpuTempC = dgpu,
-                        DgpuHotspotC = hotspot,
-                        Source = "sensor-bridge",
-                        Note = note
-                    });
-
-                    Thread.Sleep(1000);
+                        SensorBridgeFile.Write(file);
+                        shownFan1 = file.Fan1Rpm;
+                        shownFan2 = file.Fan2Rpm;
+                        if (!announced)
+                        {
+                            Logger.Info("Bridge sample source=" + file.Source + " cpu=" + file.CpuTempC + " fan1=" + file.Fan1Rpm + " fan2=" + file.Fan2Rpm);
+                            announced = true;
+                        }
+                    }
                 }
+                catch (Exception ex)
+                {
+                    Logger.Warn("Bridge sample failed: " + ex.Message);
+                }
+
+                // Fan reads only. Temperature and nvidia stay on the slow poll.
+                Thread.Sleep(250);
             }
-            finally
-            {
-                try { computer.Close(); } catch { }
-            }
-
-            Logger.Info("Sensor bridge exiting.");
-            return 0;
-        }
-
-        private static void UpdateAll(IHardware hw)
-        {
-            hw.Update();
-            foreach (var sub in hw.SubHardware)
-                UpdateAll(sub);
-        }
-
-        private static System.Collections.Generic.IEnumerable<ISensor> EnumTemps(IHardware hw)
-        {
-            foreach (var s in AllSensors(hw))
-                if (s.SensorType == SensorType.Temperature)
-                    yield return s;
-        }
-
-        private static System.Collections.Generic.IEnumerable<ISensor> AllSensors(IHardware hw)
-        {
-            foreach (var s in hw.Sensors) yield return s;
-            foreach (var sub in hw.SubHardware)
-                foreach (var s in AllSensors(sub))
-                    yield return s;
         }
     }
 }

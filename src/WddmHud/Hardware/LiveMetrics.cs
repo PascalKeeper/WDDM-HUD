@@ -19,6 +19,11 @@ namespace WddmHud.Hardware
         public string FpsSource { get; set; } = "";
 
         public double? CpuTempC { get; set; }
+        public string CpuTempSource { get; set; } = "";
+        public string Fan1Name { get; set; } = "";
+        public int? Fan1Rpm { get; set; }
+        public string Fan2Name { get; set; } = "";
+        public int? Fan2Rpm { get; set; }
         public double CpuUsagePct { get; set; }
         public string CpuName { get; set; } = "";
 
@@ -179,7 +184,23 @@ namespace WddmHud.Hardware
             if (bridge != null)
             {
                 if (bridge.CpuTempC.HasValue && bridge.CpuTempC.Value > 0 && bridge.CpuTempC.Value < 125)
+                {
                     m.CpuTempC = bridge.CpuTempC;
+                    if (string.Equals(bridge.Source, "ec-ctmp", StringComparison.Ordinal))
+                        m.CpuTempSource = "EC";
+                    else if (string.Equals(bridge.Source, "lhm", StringComparison.Ordinal))
+                        m.CpuTempSource = "PKG";
+                }
+                if (bridge.Fan1Rpm is > 0 and < 20000)
+                {
+                    m.Fan1Rpm = bridge.Fan1Rpm;
+                    m.Fan1Name = string.IsNullOrWhiteSpace(bridge.Fan1Name) ? "Fan 1" : bridge.Fan1Name;
+                }
+                if (bridge.Fan2Rpm is > 0 and < 20000)
+                {
+                    m.Fan2Rpm = bridge.Fan2Rpm;
+                    m.Fan2Name = string.IsNullOrWhiteSpace(bridge.Fan2Name) ? "Fan 2" : bridge.Fan2Name;
+                }
                 if (bridge.IgpuTempC.HasValue && bridge.IgpuTempC.Value > 0 && bridge.IgpuTempC.Value < 125)
                     m.IgpuTempC = bridge.IgpuTempC;
                 if (bridge.IgpuUtilPct.HasValue)

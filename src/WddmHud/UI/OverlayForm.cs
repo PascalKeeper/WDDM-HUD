@@ -7,6 +7,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Text;
@@ -26,6 +27,9 @@ namespace WddmHud.UI
         private readonly HudConfig _config;
         private readonly Panel _resizeGrip;
         private System.Windows.Forms.Timer? _topmostTimer;
+        private bool _inCompose;
+        private bool _fitQueued;
+        private bool _userSized;
 
         private LiveMetrics? _metrics;
         private HudConfig? _paintConfig;
@@ -38,6 +42,8 @@ namespace WddmHud.UI
         private Point _resizeStartCursor;
 
         private float _scale = 1f;
+        private bool _gameRunning;
+        private bool _gameClickThroughApplied;
 
         [DllImport("user32.dll")]
         private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
@@ -48,23 +54,62 @@ namespace WddmHud.UI
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
 
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst, ref POINT pptDst, ref SIZE psize, IntPtr hdcSrc, ref POINT pptSrc, int crKey, ref BLENDFUNCTION pblend, int dwFlags);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetDC(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+
+        [DllImport("gdi32.dll")]
+        private static extern IntPtr CreateCompatibleDC(IntPtr hDC);
+
+        [DllImport("gdi32.dll")]
+        private static extern IntPtr SelectObject(IntPtr hDC, IntPtr hObject);
+
+        [DllImport("gdi32.dll")]
+        private static extern bool DeleteObject(IntPtr hObject);
+
+        [DllImport("gdi32.dll")]
+        private static extern bool DeleteDC(IntPtr hdc);
+
         private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
         private const uint SWP_NOMOVE = 0x0002;
         private const uint SWP_NOSIZE = 0x0001;
+        private const uint SWP_NOACTIVATE = 0x0010;
         private const uint SWP_SHOWWINDOW = 0x0040;
+        private const uint SWP_NOOWNERZORDER = 0x0200;
         private const int GWL_EXSTYLE = -20;
+        private const int WS_EX_TOPMOST = 0x00000008;
         private const int WS_EX_TOOLWINDOW = 0x00000080;
         private const int WS_EX_LAYERED = 0x00080000;
         private const int WS_EX_TRANSPARENT = 0x00000020;
         private const int WS_EX_NOACTIVATE = 0x08000000;
+        private const int ULW_ALPHA = 0x00000002;
+        private const byte AC_SRC_OVER = 0x00;
+        private const byte AC_SRC_ALPHA = 0x01;
 
-        // Near-black key for transparency (not pure black so green text remains visible)
-        private static readonly Color KeyColor = Color.FromArgb(1, 1, 1);
-        private static readonly Color TextOk = Color.FromArgb(0, 255, 140);
-        private static readonly Color TextWarn = Color.FromArgb(255, 190, 60);
-        private static readonly Color TextCrit = Color.FromArgb(255, 90, 90);
-        private static readonly Color TextDim = Color.FromArgb(0, 180, 100);
-        private static readonly Color PanelFill = Color.FromArgb(18, 22, 18);
+        private static readonly Color TextOk = Color.FromArgb(255, 0, 255, 140);
+        private static readonly Color TextWarn = Color.FromArgb(255, 255, 190, 60);
+        private static readonly Color TextCrit = Color.FromArgb(255, 255, 90, 90);
+        private static readonly Color TextDim = Color.FromArgb(255, 0, 180, 100);
+        private static readonly Color PanelFill = Color.FromArgb(90, 8, 12, 8);
+        private static readonly Color Outline = Color.FromArgb(255, 0, 0, 0);
+
+        private static readonly string[] GameProcessNames =
+        {
+            "FortniteClient-Win64-Shipping",
+            "FortniteClient-Win64-Shipping_EAC_EOS",
+            "FortniteLauncher",
+            "RDR2",
+            "PlayRDR2",
+            "WRC9",
+            "WRC10",
+            "r5apex_dx12",
+            "ApexLauncher"
+        };
 
         public event Action? ExitRequested;
         public event Action? ToggleClickThroughRequested;
@@ -74,6 +119,7 @@ namespace WddmHud.UI
             _config = config ?? throw new ArgumentNullException(nameof(config));
             _config.Sanitize();
             _paintConfig = _config;
+            _userSized = _config.UserSizedFrame;
 
             AutoScaleMode = AutoScaleMode.None;
             FormBorderStyle = FormBorderStyle.None;
@@ -82,14 +128,16 @@ namespace WddmHud.UI
             TopMost = true;
             ControlBox = false;
             DoubleBuffered = true;
-            BackColor = KeyColor;
-            TransparencyKey = KeyColor;
+            // Per-pixel alpha via UpdateLayeredWindow — no TransparencyKey.
+            // Color-key + ClearType was blending green glyphs into magenta (purple fringes).
+            BackColor = Color.Black;
             Text = "WDDM HUD by pascalkeeper";
 
-            int w = Math.Clamp(_config.WindowWidth, 200, 900);
-            int h = Math.Clamp(_config.WindowHeight, 120, 700);
+            int w = Math.Clamp(_config.WindowWidth, 64, 900);
+            int h = Math.Clamp(_config.WindowHeight, 32, 700);
             SetBounds(_config.WindowX, _config.WindowY, w, h);
-            try { Opacity = Math.Clamp(_config.Opacity, 0.40, 1.0); } catch { }
+            // Do not fade the whole window — that made the HUD a dark slab over the game.
+            try { Opacity = 1.0; } catch { }
 
             try
             {
@@ -106,6 +154,8 @@ namespace WddmHud.UI
                 Cursor = Cursors.SizeNWSE,
                 Anchor = AnchorStyles.Bottom | AnchorStyles.Right
             };
+            // The corner control is not the drag surface. The invisible plate is.
+            _resizeGrip.Visible = false;
             Controls.Add(_resizeGrip);
             PlaceGrip();
 
@@ -125,26 +175,47 @@ namespace WddmHud.UI
                 ApplyExtendedStyles();
                 ForceTopMost();
                 StartTopmostTimer();
+                ComposeAndPush();
             };
 
             Resize += (_, _) =>
             {
+                if (_inCompose)
+                    return;
                 UpdateScale();
                 PlaceGrip();
-                Invalidate();
+                ComposeAndPush();
             };
 
             UpdateScale();
-            Logger.Info("OverlayForm ready (owner-drawn, design " + DesignWidth + "x" + DesignHeight + ")");
+            Logger.Info("OverlayForm ready (transparent topmost, design " + DesignWidth + "x" + DesignHeight + ")");
+        }
+
+        protected override bool ShowWithoutActivation => true;
+
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                CreateParams cp = base.CreateParams;
+                cp.ExStyle |= WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW;
+                return cp;
+            }
         }
 
         private void UpdateScale()
         {
-            // Uniform scale so content grows/shrinks without reflow chaos.
-            // Top-left of form stays fixed; only width/height change on resize.
-            float sx = ClientSize.Width / (float)DesignWidth;
-            float sy = ClientSize.Height / (float)DesignHeight;
-            _scale = Math.Clamp(Math.Min(sx, sy), 0.55f, 2.5f);
+            if (!_userSized)
+            {
+                _scale = 1f;
+                return;
+            }
+
+            int nw = _config.NaturalWidth > 64 ? _config.NaturalWidth : Math.Max(64, ClientSize.Width);
+            int nh = _config.NaturalHeight > 32 ? _config.NaturalHeight : Math.Max(32, ClientSize.Height);
+            float sx = ClientSize.Width / (float)nw;
+            float sy = ClientSize.Height / (float)nh;
+            _scale = Math.Clamp(Math.Min(sx, sy), 0.7f, 2.5f);
         }
 
         private void PlaceGrip()
@@ -157,9 +228,56 @@ namespace WddmHud.UI
         private void StartTopmostTimer()
         {
             if (_topmostTimer != null) return;
-            _topmostTimer = new System.Windows.Forms.Timer { Interval = 2000 };
-            _topmostTimer.Tick += (_, _) => ForceTopMost();
+            _topmostTimer = new System.Windows.Forms.Timer { Interval = 250 };
+            _topmostTimer.Tick += (_, _) => TickStayInFront();
             _topmostTimer.Start();
+        }
+
+        private void TickStayInFront()
+        {
+            if (IsDisposed || !_config.StayInFront) return;
+            bool game = IsGameRunning();
+            if (game != _gameRunning)
+            {
+                _gameRunning = game;
+                Logger.Info(game ? "Game detected — HUD stay-in-front + click-through" : "Game exited — restoring HUD input");
+                if (game)
+                {
+                    if (!Visible) Show();
+                    if (_config.AutoClickThroughInGame && !_config.ClickThrough)
+                    {
+                        _gameClickThroughApplied = true;
+                        SetClickThrough(true);
+                    }
+                }
+                else if (_gameClickThroughApplied)
+                {
+                    _gameClickThroughApplied = false;
+                    SetClickThrough(false);
+                }
+            }
+
+            _topmostTimer!.Interval = game ? 200 : 800;
+            if (Visible)
+                ForceTopMost();
+        }
+
+        private static bool IsGameRunning()
+        {
+            try
+            {
+                foreach (string name in GameProcessNames)
+                {
+                    Process[] procs = Process.GetProcessesByName(name);
+                    if (procs != null && procs.Length > 0)
+                    {
+                        foreach (var p in procs) p.Dispose();
+                        return true;
+                    }
+                }
+            }
+            catch { /* ignore */ }
+            return false;
         }
 
         private ContextMenuStrip BuildMenu()
@@ -171,8 +289,8 @@ namespace WddmHud.UI
             menu.Items.Add("Open config folder", null, (_, _) => OpenPath(AppPaths.ConfigDirectory));
             menu.Items.Add("Open logs", null, (_, _) => OpenPath(AppPaths.LogDirectory));
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("Hide to tray", null, (_, _) => Hide());
-            menu.Items.Add("Exit WDDM HUD", null, (_, _) => ExitRequested?.Invoke());
+            menu.Items.Add("Minimize to tray", null, (_, _) => Hide());
+            menu.Items.Add("Exit", null, (_, _) => ExitRequested?.Invoke());
             return menu;
         }
 
@@ -197,29 +315,67 @@ namespace WddmHud.UI
             try
             {
                 if (IsHandleCreated)
-                    Invalidate();
+                    ComposeAndPush();
             }
             catch { /* ignore */ }
         }
 
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            // Layered window: no GDI background fill (that was the magenta key).
+        }
+
         protected override void OnPaint(PaintEventArgs e)
         {
-            base.OnPaint(e);
-            var g = e.Graphics;
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
-            g.Clear(KeyColor);
+            // Content is pushed via UpdateLayeredWindow in ComposeAndPush.
+        }
 
-            float s = _scale;
-            // Soft panel background (slightly above key color so it is visible but not solid black)
-            using (var bg = new SolidBrush(PanelFill))
+        private void ComposeAndPush()
+        {
+            if (IsDisposed || !IsHandleCreated || _inCompose) return;
+            _inCompose = true;
+            int w = Math.Max(1, Width);
+            int h = Math.Max(1, Height);
+            try
             {
-                float pad = 4 * s;
-                g.FillRectangle(bg, pad, pad, ClientSize.Width - pad * 2, ClientSize.Height - pad * 2);
+                using var bmp = new Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+                using (var g = Graphics.FromImage(bmp))
+                {
+                    g.Clear(Color.Transparent);
+                    g.SmoothingMode = SmoothingMode.AntiAlias;
+                    g.CompositingMode = CompositingMode.SourceOver;
+                    g.CompositingQuality = CompositingQuality.HighQuality;
+                    g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+                    g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                    PaintMetrics(g);
+                }
+                PushLayered(bmp);
             }
+            catch (Exception ex)
+            {
+                Logger.Error("ComposeAndPush", ex);
+            }
+            finally
+            {
+                _inCompose = false;
+            }
+        }
 
+        private void PaintMetrics(Graphics g)
+        {
             var m = _metrics;
             var cfg = _paintConfig ?? _config;
+            UpdateScale();
+            float s = _scale;
+            // Alpha 1 is invisible on the desktop and still a drag target.
+            // A fully clear pixel falls through a layered window.
+            if (!cfg.ClickThrough)
+            {
+                using var hit = new SolidBrush(Color.FromArgb(1, 0, 0, 0));
+                g.FillRectangle(hit, 0, 0, Width, Height);
+                DrawResizeCorner(g);
+            }
+
             if (m == null)
             {
                 DrawLine(g, "●  starting…", 10, 10, TextOk, 11f * s, FontStyle.Bold);
@@ -234,16 +390,19 @@ namespace WddmHud.UI
             else if (string.Equals(m.StatusText, "BATTERY", StringComparison.OrdinalIgnoreCase))
                 statusColor = TextWarn;
 
-            float x = 10 * s;
-            float y = 8 * s;
+            float x = 8 * s;
+            float y = 4 * s;
             float line = 16f * s;
+            float maxRight = x;
             float titleSize = 11.5f * s;
             float bodySize = 10.5f * s;
 
             // Header — always visible status glyph
             if (cfg.ShowStatusGlyph)
             {
-                DrawLine(g, $"{m.StatusGlyph}  {m.StatusText}", x, y, statusColor, titleSize, FontStyle.Bold);
+                string header = $"{m.StatusGlyph}  {m.StatusText}";
+                maxRight = Math.Max(maxRight, x + MeasureText(g, header, titleSize));
+                DrawLine(g, header, x, y, statusColor, titleSize, FontStyle.Bold);
                 y += line + 2 * s;
             }
 
@@ -261,12 +420,15 @@ namespace WddmHud.UI
                 if (m.CpuTempC.HasValue)
                 {
                     Color c = TempColor(m.CpuTempC.Value, cfg.CpuWarnC, cfg.CpuCritC);
-                    rows.Add(($"CPU   {m.CpuTempC.Value,5:0.0}°C   {m.CpuUsagePct,4:0}%", c));
+                    string src = string.IsNullOrEmpty(m.CpuTempSource) ? "" : " " + m.CpuTempSource;
+                    rows.Add(($"CPU   {m.CpuTempC.Value,5:0.0}°C{src}   {m.CpuUsagePct,4:0}%", c));
                 }
                 else if (m.CpuUsagePct > 0.05)
                 {
                     rows.Add(($"CPU   {m.CpuUsagePct,5:0.0}%", TextOk));
                 }
+                AddFanRow(rows, m.Fan1Name, m.Fan1Rpm);
+                AddFanRow(rows, m.Fan2Name, m.Fan2Rpm);
             }
 
             if (cfg.ShowIgpuTemp)
@@ -293,7 +455,7 @@ namespace WddmHud.UI
             {
                 string clk = m.DgpuClockMhz.HasValue ? $"  {m.DgpuClockMhz.Value:0}MHz" : "";
                 string ps = string.IsNullOrEmpty(m.DgpuPState) ? "" : $"  {m.DgpuPState}";
-                rows.Add(($"Util  {m.DgpuUtilPct.Value,5:0.0}%{clk}{ps}", TextOk));
+                rows.Add(($"1070  {m.DgpuUtilPct.Value,5:0.0}%{clk}{ps}", TextOk));
             }
 
             if (cfg.ShowVram && m.VramUsedMiB.HasValue && m.VramTotalMiB.HasValue)
@@ -303,8 +465,8 @@ namespace WddmHud.UI
 
             if (cfg.ShowPower && m.DgpuPowerW.HasValue)
             {
-                string lim = m.DgpuPowerLimitW.HasValue ? $"/{m.DgpuPowerLimitW.Value:0}W" : "W";
-                rows.Add(($"PWR   {m.DgpuPowerW.Value:0.0}{lim}", TextOk));
+                string lim = m.DgpuPowerLimitW.HasValue ? $" / {m.DgpuPowerLimitW.Value:0}W" : "W";
+                rows.Add(($"1070W {m.DgpuPowerW.Value,5:0.0}{lim}", TextOk));
             }
 
             if (cfg.ShowSystemRam && m.SystemRamTotalGiB > 0.1)
@@ -317,11 +479,42 @@ namespace WddmHud.UI
 
             foreach (var row in rows)
             {
+                maxRight = Math.Max(maxRight, x + MeasureText(g, row.text, bodySize));
                 DrawLine(g, row.text, x, y, row.color, bodySize, FontStyle.Bold);
                 y += line;
-                if (y > ClientSize.Height - 18 * s)
-                    break;
             }
+            RequestFit(maxRight, y);
+        }
+
+        private static float MeasureText(Graphics g, string text, float size)
+        {
+            if (size < 7f) size = 7f;
+            using var font = new Font("Consolas", size, FontStyle.Bold, GraphicsUnit.Pixel);
+            return g.MeasureString(text, font, PointF.Empty, StringFormat.GenericTypographic).Width;
+        }
+
+        private void RequestFit(float right, float bottom)
+        {
+            if (_userSized || _resizing)
+                return;
+            int wantW = Math.Clamp((int)Math.Ceiling(right) + 18, 64, 900);
+            int wantH = Math.Clamp((int)Math.Ceiling(bottom) + 16, 32, 700);
+            _config.NaturalWidth = wantW;
+            _config.NaturalHeight = wantH;
+            if (Math.Abs(ClientSize.Width - wantW) <= 2 && Math.Abs(ClientSize.Height - wantH) <= 2)
+                return;
+            if (_fitQueued || !IsHandleCreated)
+                return;
+            _fitQueued = true;
+            BeginInvoke(new Action(() =>
+            {
+                _fitQueued = false;
+                if (IsDisposed) return;
+                _inCompose = true;
+                try { ClientSize = new Size(wantW, wantH); }
+                finally { _inCompose = false; }
+                ComposeAndPush();
+            }));
         }
 
         private static Color TempColor(double t, int warn, int crit)
@@ -331,23 +524,83 @@ namespace WddmHud.UI
             return TextOk;
         }
 
+        private static void AddFanRow(List<(string text, Color color)> rows, string name, int? rpm)
+        {
+            if (rpm is not > 0)
+                return;
+            string label = string.IsNullOrWhiteSpace(name) ? "Fan" : name.Trim();
+            rows.Add(($"{label}  {rpm.Value,5} rpm", TextOk));
+        }
+
+        private Rectangle GripRect()
+        {
+            int grip = Math.Max(18, (int)(22 * _scale));
+            return new Rectangle(Math.Max(0, ClientSize.Width - grip), Math.Max(0, ClientSize.Height - grip), grip, grip);
+        }
+
+        private void DrawResizeCorner(Graphics g)
+        {
+            Rectangle grip = GripRect();
+            using var pen = new Pen(Color.FromArgb(210, TextOk), 1.5f);
+            int right = grip.Right - 3;
+            int bottom = grip.Bottom - 3;
+            for (int i = 0; i < 3; i++)
+            {
+                int offset = i * 4;
+                g.DrawLine(pen, right - 10 + offset, bottom, right, bottom - 10 + offset);
+            }
+        }
+
         private static void DrawLine(Graphics g, string text, float x, float y, Color color, float size, FontStyle style)
         {
             if (size < 7f) size = 7f;
             try
             {
-                using var font = new Font("Consolas", size, style, GraphicsUnit.Pixel);
-                // subtle shadow for readability over busy game frames
-                using (var shadow = new SolidBrush(Color.FromArgb(160, 0, 0, 0)))
-                    g.DrawString(text, font, shadow, x + 1, y + 1);
+                using var fam = new FontFamily("Consolas");
+                using var path = new GraphicsPath();
+                path.AddString(text, fam, (int)style, size, new PointF(x, y), StringFormat.GenericTypographic);
+                float stroke = Math.Clamp(size * 0.16f, 2.0f, 4.0f);
+                using (var pen = new Pen(Outline, stroke) { LineJoin = LineJoin.Round })
+                    g.DrawPath(pen, path);
                 using var brush = new SolidBrush(color);
-                g.DrawString(text, font, brush, x, y);
+                g.FillPath(brush, path);
             }
             catch
             {
-                using var font = new Font(FontFamily.GenericMonospace, Math.Max(8f, size * 0.75f), style);
+                using var font = new Font(FontFamily.GenericMonospace, Math.Max(8f, size * 0.75f), style, GraphicsUnit.Pixel);
                 using var brush = new SolidBrush(color);
                 g.DrawString(text, font, brush, x, y);
+            }
+        }
+
+        private void PushLayered(Bitmap bmp)
+        {
+            IntPtr screenDc = GetDC(IntPtr.Zero);
+            IntPtr memDc = CreateCompatibleDC(screenDc);
+            IntPtr hBmp = IntPtr.Zero;
+            IntPtr old = IntPtr.Zero;
+            try
+            {
+                hBmp = bmp.GetHbitmap(Color.FromArgb(0, 0, 0, 0));
+                old = SelectObject(memDc, hBmp);
+                var src = new POINT { x = 0, y = 0 };
+                var dst = new POINT { x = Left, y = Top };
+                var size = new SIZE { cx = bmp.Width, cy = bmp.Height };
+                var blend = new BLENDFUNCTION
+                {
+                    BlendOp = AC_SRC_OVER,
+                    BlendFlags = 0,
+                    SourceConstantAlpha = 255,
+                    AlphaFormat = AC_SRC_ALPHA
+                };
+                UpdateLayeredWindow(Handle, screenDc, ref dst, ref size, memDc, ref src, 0, ref blend, ULW_ALPHA);
+            }
+            finally
+            {
+                if (old != IntPtr.Zero) SelectObject(memDc, old);
+                if (hBmp != IntPtr.Zero) DeleteObject(hBmp);
+                if (memDc != IntPtr.Zero) DeleteDC(memDc);
+                if (screenDc != IntPtr.Zero) ReleaseDC(IntPtr.Zero, screenDc);
             }
         }
 
@@ -355,51 +608,78 @@ namespace WddmHud.UI
         private void OnDragDown(object? sender, MouseEventArgs e)
         {
             if (e.Button != MouseButtons.Left || _config.ClickThrough) return;
-            _dragging = true;
-            _dragStartCursor = Cursor.Position;
-            _dragStartLoc = Location;
+            if (GripRect().Contains(e.Location))
+            {
+                _resizing = true;
+                _userSized = true;
+                _config.UserSizedFrame = true;
+                if (_config.NaturalWidth < 64)
+                    _config.NaturalWidth = Math.Max(64, ClientSize.Width);
+                if (_config.NaturalHeight < 32)
+                    _config.NaturalHeight = Math.Max(32, ClientSize.Height);
+                _dragging = false;
+                _resizeStartSize = Size;
+                _resizeStartCursor = Cursor.Position;
+            }
+            else
+            {
+                _dragging = true;
+                _resizing = false;
+                _dragStartCursor = Cursor.Position;
+                _dragStartLoc = Location;
+            }
+            Capture = true;
         }
 
         private void OnDragMove(object? sender, MouseEventArgs e)
         {
-            if (!_dragging) return;
-            int dx = Cursor.Position.X - _dragStartCursor.X;
-            int dy = Cursor.Position.Y - _dragStartCursor.Y;
-            Location = new Point(_dragStartLoc.X + dx, _dragStartLoc.Y + dy);
+            if (_resizing)
+            {
+                int dx = Cursor.Position.X - _resizeStartCursor.X;
+                int dy = Cursor.Position.Y - _resizeStartCursor.Y;
+                int nw = Math.Clamp(_resizeStartSize.Width + dx, 140, 900);
+                int nh = Math.Clamp(_resizeStartSize.Height + dy, 80, 700);
+                Size = new Size(nw, nh);
+                ComposeAndPush();
+                return;
+            }
+
+            if (_dragging)
+            {
+                int dx = Cursor.Position.X - _dragStartCursor.X;
+                int dy = Cursor.Position.Y - _dragStartCursor.Y;
+                Location = new Point(_dragStartLoc.X + dx, _dragStartLoc.Y + dy);
+                ComposeAndPush();
+                return;
+            }
+
+            Cursor = GripRect().Contains(e.Location) ? Cursors.SizeNWSE : Cursors.SizeAll;
         }
 
         private void OnDragUp(object? sender, MouseEventArgs e)
         {
-            if (!_dragging) return;
+            if (!_dragging && !_resizing) return;
             _dragging = false;
+            _resizing = false;
+            Capture = false;
             PersistGeometry();
         }
 
-        // ---- resize from bottom-right only: top-left stays fixed ----
+        // Panel grip cannot receive clicks on an UpdateLayeredWindow surface.
+        // Resize is handled on the form, from the painted corner.
         private void OnResizeDown(object? sender, MouseEventArgs e)
         {
-            if (e.Button != MouseButtons.Left) return;
-            _resizing = true;
-            _resizeStartSize = Size;
-            _resizeStartCursor = Cursor.Position;
+            OnDragDown(sender, e);
         }
 
         private void OnResizeMove(object? sender, MouseEventArgs e)
         {
-            if (!_resizing) return;
-            // Only change Width/Height — Location (top-left) is never modified here.
-            int dx = Cursor.Position.X - _resizeStartCursor.X;
-            int dy = Cursor.Position.Y - _resizeStartCursor.Y;
-            int nw = Math.Clamp(_resizeStartSize.Width + dx, 200, 900);
-            int nh = Math.Clamp(_resizeStartSize.Height + dy, 120, 700);
-            Size = new Size(nw, nh);
+            OnDragMove(sender, e);
         }
 
         private void OnResizeUp(object? sender, MouseEventArgs e)
         {
-            if (!_resizing) return;
-            _resizing = false;
-            PersistGeometry();
+            OnDragUp(sender, e);
         }
 
         private void OnRightClick(object? sender, MouseEventArgs e)
@@ -416,12 +696,14 @@ namespace WddmHud.UI
             {
                 if (!IsHandleCreated) return;
                 int ex = GetWindowLong(Handle, GWL_EXSTYLE);
-                ex |= WS_EX_TOOLWINDOW | WS_EX_LAYERED | WS_EX_NOACTIVATE;
+                ex |= WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED | WS_EX_NOACTIVATE;
                 if (_config.ClickThrough)
                     ex |= WS_EX_TRANSPARENT;
                 else
                     ex &= ~WS_EX_TRANSPARENT;
                 SetWindowLong(Handle, GWL_EXSTYLE, ex);
+                if (_resizeGrip != null)
+                    _resizeGrip.Visible = false;
             }
             catch (Exception ex)
             {
@@ -440,11 +722,64 @@ namespace WddmHud.UI
         {
             try
             {
-                if (IsDisposed || !IsHandleCreated) return;
+                if (IsDisposed || !IsHandleCreated || !Visible) return;
                 TopMost = true;
-                SetWindowPos(Handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+                SetWindowPos(
+                    Handle,
+                    HWND_TOPMOST,
+                    0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
             }
             catch { /* ignore */ }
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            const int WM_WINDOWPOSCHANGING = 0x0046;
+            const int WM_ACTIVATE = 0x0006;
+            const int WM_ACTIVATEAPP = 0x001C;
+            if (m.Msg == WM_WINDOWPOSCHANGING && Visible && _config.StayInFront && m.LParam != IntPtr.Zero)
+            {
+                try
+                {
+                    var wp = Marshal.PtrToStructure<WINDOWPOS>(m.LParam);
+                    wp.hwndInsertAfter = HWND_TOPMOST;
+                    Marshal.StructureToPtr(wp, m.LParam, false);
+                }
+                catch { /* ignore */ }
+            }
+            base.WndProc(ref m);
+            if ((m.Msg == WM_ACTIVATE || m.Msg == WM_ACTIVATEAPP) && Visible)
+            {
+                try { BeginInvoke(new Action(ForceTopMost)); } catch { }
+            }
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct WINDOWPOS
+        {
+            public IntPtr hwnd;
+            public IntPtr hwndInsertAfter;
+            public int x, y, cx, cy;
+            public uint flags;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct POINT
+        {
+            public int x, y;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct SIZE
+        {
+            public int cx, cy;
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 1)]
+        private struct BLENDFUNCTION
+        {
+            public byte BlendOp, BlendFlags, SourceConstantAlpha, AlphaFormat;
         }
 
         public void PersistGeometry()

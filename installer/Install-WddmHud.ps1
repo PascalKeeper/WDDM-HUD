@@ -37,6 +37,9 @@
 
 .NOTES
     Copyright (C) 2026 Joseph Rocco Peransi / pascalkeeper
+    Requirements that a person must confirm are in docs\INSTALLER_NOTES.md.
+    This script does not change Defender, the driver blocklist, the power plan,
+    the panel refresh rate, or the default audio device.
     Always double-click Install-WddmHud.bat (not the .ps1) for end users — the .bat
     ensures the correct host and avoids the "How do you want to open this file?" dialog.
 #>
@@ -109,6 +112,72 @@ function Assert-X64 {
         throw '64-bit Windows is required for WDDM HUD self-contained build.'
     }
     Write-Log 'Architecture: x64' 'OK'
+}
+
+function Write-RequirementChecklist {
+    $notes = Join-Path $InstallRoot 'docs\INSTALLER_NOTES.md'
+    Write-Log "Installer notes: $notes" 'INFO'
+    Write-Log 'Read-only checks. This installer does not change Defender, the driver blocklist, the power plan, refresh rate, or the default audio device.' 'INFO'
+
+    $build = [Environment]::OSVersion.Version.Build
+    if ($build -eq 19045) {
+        Write-Log "Windows 10 build $build matches the proven 22H2 ship." 'OK'
+    } else {
+        Write-Log "Windows 10 build $build. Proven ship is 19045 (22H2). Other builds are unverified." 'WARN'
+    }
+
+    try {
+        $block = (Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Config' -Name VulnerableDriverBlocklistEnable -ErrorAction Stop).VulnerableDriverBlocklistEnable
+        if ($block -eq 0) {
+            Write-Log 'Vulnerable-driver blocklist DWORD is 0.' 'OK'
+        } else {
+            Write-Log "Vulnerable-driver blocklist DWORD is $block. CPU package temperature needs 0 before the bridge driver will load. See INSTALLER_NOTES.md." 'WARN'
+        }
+    } catch {
+        Write-Log 'Could not read VulnerableDriverBlocklistEnable. Confirm it is 0 before relying on CPU package temperature.' 'WARN'
+    }
+
+    try {
+        $dg = Get-CimInstance -ClassName Win32_DeviceGuard -Namespace root\Microsoft\Windows\DeviceGuard -ErrorAction Stop
+        $hvci = @($dg.SecurityServicesRunning) -contains 2
+        if ($hvci) {
+            Write-Log 'Memory integrity is running. The temperature driver will not load until it is off.' 'WARN'
+        } else {
+            Write-Log 'Memory integrity is not running.' 'OK'
+        }
+    } catch {
+        Write-Log 'Could not read memory integrity state.' 'WARN'
+    }
+
+    try {
+        $mp = Get-MpComputerStatus -ErrorAction Stop
+        Write-Log ("Tamper Protection={0}. Real-time protection={1}. Defender reboot required={2}." -f $mp.IsTamperProtected, $mp.RealTimeProtectionEnabled, $mp.RebootRequired) 'INFO'
+        if ($mp.RebootRequired) {
+            Write-Log 'Defender reports a reboot is required. That reboot is not caused by this installer.' 'WARN'
+        }
+        if ($mp.RealTimeProtectionEnabled) {
+            Write-Log 'Real-time protection is on. CPU package temperature needs the WddmHud.sys exclusion or Defender can quarantine the driver. Fan RPM does not use that driver.' 'WARN'
+        } else {
+            Write-Log 'Real-time protection is off. Leave it off unless the driver exclusions in INSTALLER_NOTES.md are confirmed.' 'OK'
+        }
+    } catch {
+        Write-Log 'Could not read Defender status.' 'WARN'
+    }
+
+    $pawnReady = $false
+    try {
+        $pawnReady = [bool](Get-Service -Name 'PawnIO' -ErrorAction SilentlyContinue)
+    } catch { }
+    if (-not $pawnReady) {
+        try {
+            $pawnReady = [bool](Get-CimInstance Win32_SystemDriver -Filter "Name='PawnIO'" -ErrorAction SilentlyContinue)
+        } catch { }
+    }
+    if ($pawnReady) {
+        Write-Log 'PawnIO service is present. Fan RPM can be read when the BIOS answers Dell SMM.' 'OK'
+    } else {
+        Write-Log 'PawnIO service was not found. Install official PawnIO 2.2.0 with -install -silent before expecting fan RPM. Do not pass -unrestricted.' 'WARN'
+    }
 }
 
 function New-DirectorySafe {
@@ -319,6 +388,7 @@ try {
 
     Assert-Windows10Plus
     Assert-X64
+    Write-RequirementChecklist
 
     if (-not (Test-Path 'F:\')) {
         Write-Log 'F:\ not available. Install root prefers F:\; installer will still try the path.' 'WARN'

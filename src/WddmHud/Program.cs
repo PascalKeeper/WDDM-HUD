@@ -30,6 +30,7 @@ namespace WddmHud
             {
                 int n = InstanceGuard.TerminateAllExcept(Environment.ProcessId);
                 InstanceGuard.PurgeStaleArtifactsStatic();
+                TrayController.DismissGhostIcons();
                 Logger.Info($"--kill-all complete; terminated {n} instance(s)");
                 Environment.ExitCode = 0;
                 return;
@@ -115,12 +116,28 @@ namespace WddmHud
             }
         }
 
+        private static bool SensorFileIsFresh()
+        {
+            try
+            {
+                string path = SensorBridgeFile.Path;
+                if (!File.Exists(path))
+                    return false;
+                return (DateTime.UtcNow - File.GetLastWriteTimeUtc(path)).TotalSeconds < 5;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private static void RunApp(string[] args)
         {
             bool startHidden = Array.Exists(args, a =>
                 string.Equals(a, "--tray", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(a, "-tray", StringComparison.OrdinalIgnoreCase));
 
+            TrayController.DismissGhostIcons();
             Logger.Info("RunApp: loading config");
             HudConfig config = HudConfig.Load();
             if (config == null)
@@ -177,12 +194,14 @@ namespace WddmHud
             {
                 Interval = Math.Clamp(config.PollIntervalMs, 250, 5000)
             };
+            LiveMetrics? latest = null;
 
             pollTimer.Tick += (_, _) =>
             {
                 try
                 {
                     LiveMetrics sample = metricsEngine.Sample();
+                    latest = sample;
                     // Refresh AC status occasionally from snapshot cache (cheap)
                     sample.OnAcPower = HardwareDetector.Detect(forceRefresh: false).OnAcPower;
                     sample.HybridDetected = hw.HasHybridGraphics;
@@ -201,13 +220,43 @@ namespace WddmHud
                 }
             };
 
+            var fanTimer = new System.Windows.Forms.Timer { Interval = 250 };
+            fanTimer.Tick += (_, _) =>
+            {
+                try
+                {
+                    if (latest == null)
+                        return;
+                    var bridge = SensorBridgeFile.TryReadFresh(2.0);
+                    if (bridge == null)
+                        return;
+                    int? fan1 = bridge.Fan1Rpm is > 0 and < 20000 ? bridge.Fan1Rpm : null;
+                    int? fan2 = bridge.Fan2Rpm is > 0 and < 20000 ? bridge.Fan2Rpm : null;
+                    if (fan1 == latest.Fan1Rpm && fan2 == latest.Fan2Rpm)
+                        return;
+                    latest.Fan1Rpm = fan1;
+                    latest.Fan2Rpm = fan2;
+                    if (!string.IsNullOrWhiteSpace(bridge.Fan1Name))
+                        latest.Fan1Name = bridge.Fan1Name;
+                    if (!string.IsNullOrWhiteSpace(bridge.Fan2Name))
+                        latest.Fan2Name = bridge.Fan2Name;
+                    overlay.ApplyMetrics(latest, config);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error("Fan tick failed", ex);
+                }
+            };
+
             void Exit()
             {
                 try
                 {
                     pollTimer.Stop();
+                    fanTimer.Stop();
                     overlay.PersistGeometry();
                     tray.Dispose();
+                    TrayController.DismissGhostIcons();
                     overlay.Close();
                 }
                 catch (Exception ex)
@@ -246,6 +295,7 @@ namespace WddmHud
             };
 
             pollTimer.Start();
+            fanTimer.Start();
 
             if (startHidden || config.StartMinimizedToTray)
             {
@@ -257,6 +307,11 @@ namespace WddmHud
                 overlay.Show();
                 overlay.ForceTopMost();
             }
+
+            // UAC must not run before the window exists. A fresh sensor file
+            // means the elevated reader is already up, so do not prompt again.
+            if (!SensorFileIsFresh())
+                ThreadPool.QueueUserWorkItem(_ => tray.StartEcBridge());
 
             Application.Run();
 

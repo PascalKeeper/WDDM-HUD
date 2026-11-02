@@ -13,7 +13,7 @@
     <ApplicationIcon />
     <AssemblyName>WddmHud</AssemblyName>
     <RootNamespace>WddmHud</RootNamespace>
-    <Version>1.0.0</Version>
+    <Version>1.0.3</Version>
     <Authors>Joseph Rocco Peransi / pascalkeeper</Authors>
     <Company>pascalkeeper</Company>
     <Product>WDDM HUD by pascalkeeper</Product>
@@ -39,5 +39,11 @@
   <ItemGroup>
     <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.4" />
     <PackageReference Include="System.Management" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Hardware\DellSMM.bin">
+      <LogicalName>WddmHud.Hardware.DellSMM.bin</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 </Project>

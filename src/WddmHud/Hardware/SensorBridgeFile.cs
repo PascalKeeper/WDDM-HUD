@@ -32,6 +32,18 @@ namespace WddmHud.Hardware
         [JsonPropertyName("dgpu_hotspot_c")]
         public double? DgpuHotspotC { get; set; }
 
+        [JsonPropertyName("fan1_name")]
+        public string Fan1Name { get; set; } = "";
+
+        [JsonPropertyName("fan1_rpm")]
+        public int? Fan1Rpm { get; set; }
+
+        [JsonPropertyName("fan2_name")]
+        public string Fan2Name { get; set; } = "";
+
+        [JsonPropertyName("fan2_rpm")]
+        public int? Fan2Rpm { get; set; }
+
         [JsonPropertyName("source")]
         public string Source { get; set; } = "lhm";
 

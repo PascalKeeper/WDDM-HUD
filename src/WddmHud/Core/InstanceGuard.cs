@@ -163,7 +163,10 @@ namespace WddmHud.Core
                     continue;
 
                 bool isBridge = info.IsSensorBridge;
-                bool isUi = !isBridge;
+                // An elevated bridge often has a blank command line from here.
+                // Do not treat that blank as a second HUD and kill it.
+                bool isUi = !isBridge && info.CommandLine.IndexOf("WddmHud", StringComparison.OrdinalIgnoreCase) >= 0
+                    && info.CommandLine.IndexOf("sensor-bridge", StringComparison.OrdinalIgnoreCase) < 0;
 
                 bool match =
                     includeOtherRole
@@ -197,7 +200,7 @@ namespace WddmHud.Core
                     continue;
 
                 bool isBridge = info.IsSensorBridge;
-                if (role == InstanceRole.Ui && isBridge)
+                if (role == InstanceRole.Ui && (isBridge || string.IsNullOrEmpty(info.CommandLine)))
                     continue;
                 if (role == InstanceRole.SensorBridge && !isBridge)
                     continue;
@@ -399,6 +402,10 @@ namespace WddmHud.Core
                         {
                             try
                             {
+                                string fileName = Path.GetFileName(sys);
+                                if (fileName.StartsWith("WinRing0", StringComparison.OrdinalIgnoreCase)
+                                    || fileName.Equals("WddmHud.sys", StringComparison.OrdinalIgnoreCase))
+                                    continue;
                                 File.Delete(sys);
                                 Logger.Info("InstanceGuard: removed leftover driver file " + sys);
                             }

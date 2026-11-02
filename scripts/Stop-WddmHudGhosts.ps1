@@ -63,6 +63,12 @@ $purge = @(
 )
 foreach ($pattern in $purge) {
     Get-Item $pattern -ErrorAction SilentlyContinue | ForEach-Object {
+        $fileName = $_.Name
+        if ($fileName.StartsWith('WinRing0', [System.StringComparison]::OrdinalIgnoreCase) -or
+            $fileName.Equals('WddmHud.sys', [System.StringComparison]::OrdinalIgnoreCase)) {
+            Write-Log "Keeping temperature driver $($_.FullName)" 'OK'
+            return
+        }
         if ($DryRun) { Write-Log "Would delete $($_.FullName)" 'DRY' }
         else {
             Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue

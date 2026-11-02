@@ -29,6 +29,15 @@ namespace WddmHud.Core
         [JsonPropertyName("window_height")]
         public int WindowHeight { get; set; } = 280;
 
+        [JsonPropertyName("user_sized_frame")]
+        public bool UserSizedFrame { get; set; }
+
+        [JsonPropertyName("natural_width")]
+        public int NaturalWidth { get; set; }
+
+        [JsonPropertyName("natural_height")]
+        public int NaturalHeight { get; set; }
+
         [JsonPropertyName("opacity")]
         public double Opacity { get; set; } = 0.92;
 
@@ -37,6 +46,18 @@ namespace WddmHud.Core
 
         [JsonPropertyName("click_through")]
         public bool ClickThrough { get; set; } = false;
+
+        /// <summary>Re-assert WS_EX_TOPMOST while a game is in the foreground.</summary>
+        [JsonPropertyName("stay_in_front")]
+        public bool StayInFront { get; set; } = true;
+
+        /// <summary>Force click-through automatically while Fortnite/RDR2/etc. is running.</summary>
+        [JsonPropertyName("auto_click_through_in_game")]
+        public bool AutoClickThroughInGame { get; set; } = true;
+
+        /// <summary>Paint a solid panel behind text. Off = fully transparent chrome (text + outline only).</summary>
+        [JsonPropertyName("show_panel")]
+        public bool ShowPanel { get; set; } = false;
 
         [JsonPropertyName("start_minimized_to_tray")]
         public bool StartMinimizedToTray { get; set; } = false;
@@ -154,11 +175,13 @@ namespace WddmHud.Core
             // Force-disable RAM temp (no sensor on target hardware)
             ShowRamTemp = false;
 
-            if (WindowWidth < 200) WindowWidth = 200;
-            if (WindowHeight < 120) WindowHeight = 120;
+            if (WindowWidth < 64) WindowWidth = 64;
+            if (WindowHeight < 32) WindowHeight = 32;
             if (WindowWidth > 900) WindowWidth = 900;
             if (WindowHeight > 700) WindowHeight = 700;
-            if (Opacity < 0.35) Opacity = 0.35;
+            // Form.Opacity fades the TEXT as well as chrome. Keep it at 1 so glyphs stay
+            // readable; transparency is the color-key background, not window alpha.
+            if (Opacity < 0.85) Opacity = 1.0;
             if (Opacity > 1.0) Opacity = 1.0;
             if (PollIntervalMs < 250) PollIntervalMs = 250;
             if (PollIntervalMs > 5000) PollIntervalMs = 5000;

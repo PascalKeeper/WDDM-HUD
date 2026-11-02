@@ -34,23 +34,27 @@ namespace WddmHud.Hardware
 
                 try
                 {
-                    var c = new Computer
+                    if (!IsAdministrator())
+                    {
+                        // The UI process stays non-elevated. Only --sensor-bridge loads the driver.
+                        _computer = null;
+                        _opened = true;
+                        return;
+                    }
+
+                    _computer = new Computer
                     {
                         IsCpuEnabled = true,
-                        IsGpuEnabled = true,
-                        IsMemoryEnabled = false,   // no RAM temp sensor on this chassis
                         IsMotherboardEnabled = true,
-                        IsControllerEnabled = false,
+                        IsControllerEnabled = true,
+                        IsGpuEnabled = false,
+                        IsMemoryEnabled = false,
                         IsNetworkEnabled = false,
-                        IsStorageEnabled = false,
-                        IsBatteryEnabled = false,
-                        IsPsuEnabled = false
+                        IsStorageEnabled = false
                     };
-                    c.Open();
-                    _computer = c;
+                    _computer.Open();
                     _opened = true;
-                    Logger.Info("LibreHardwareMonitor opened (CPU + GPU + MB sensors).");
-                    // One-shot sensor inventory for diagnostics
+                    Logger.Info("SensorHub: LibreHardwareMonitor opened. WinRing0 load was granted.");
                     LogSensorInventoryOnce();
                 }
                 catch (Exception ex)
@@ -60,6 +64,48 @@ namespace WddmHud.Hardware
                     _computer = null;
                 }
             }
+        }
+
+        public List<(string Name, int Rpm)> ReadFans()
+        {
+            var found = new List<(string Name, int Rpm)>();
+            EnsureOpened();
+            if (!_opened || _computer == null)
+                return found;
+
+            lock (_sync)
+            {
+                try
+                {
+                    foreach (IHardware hw in _computer.Hardware)
+                    {
+                        UpdateRecursive(hw);
+                        foreach (ISensor s in EnumerateSensors(hw))
+                        {
+                            if (s.SensorType != SensorType.Fan || !s.Value.HasValue)
+                                continue;
+                            int rpm = (int)Math.Round(s.Value.Value);
+                            if (rpm <= 0 || rpm >= 20000)
+                                continue;
+                            string name = string.IsNullOrWhiteSpace(s.Name) ? "Fan" : s.Name.Trim();
+                            found.Add((name, rpm));
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warn("SensorHub.ReadFans failed: " + ex.Message);
+                }
+            }
+
+            return found;
+        }
+
+        private static bool IsAdministrator()
+        {
+            using var id = System.Security.Principal.WindowsIdentity.GetCurrent();
+            var principal = new System.Security.Principal.WindowsPrincipal(id);
+            return principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
         }
 
         public void Sample(out double? cpuTempC, out double? igpuTempC, out double? igpuLoadPct)
