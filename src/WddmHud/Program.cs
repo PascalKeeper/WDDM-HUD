@@ -52,6 +52,13 @@ namespace WddmHud
                 return;
             }
 
+            if (Array.Exists(args, a =>
+                    string.Equals(a, "--drag-selftest", StringComparison.OrdinalIgnoreCase)))
+            {
+                Environment.ExitCode = DragResizeGuard.SelfTest();
+                return;
+            }
+
             // Elevated sensor bridge — exclusive bridge mutex; never stacks bridges
             if (isBridge)
             {
@@ -168,6 +175,10 @@ namespace WddmHud
             HudConfig config = HudConfig.Load();
             if (config == null)
                 throw new InvalidOperationException("HudConfig.Load returned null");
+
+            int dragGuard = DragResizeGuard.SelfTest();
+            if (dragGuard != 0)
+                Logger.Error("Drag/resize guard failed code=" + dragGuard + " — overlay may ignore the mouse");
 
             Logger.Info("RunApp: detecting hardware");
             HardwareSnapshot hw = HardwareDetector.Detect(forceRefresh: true);

@@ -46,8 +46,12 @@ namespace WddmHud.Core
         [JsonPropertyName("poll_interval_ms")]
         public int PollIntervalMs { get; set; } = 1000;
 
-        [JsonPropertyName("click_through")]
-        public bool ClickThrough { get; set; } = false;
+        /// <summary>
+        /// Runtime only. Never persist: a saved true value makes drag/resize
+        /// dead after relaunch. AutoClickThroughInGame is the persisted in-game flag.
+        /// </summary>
+        [JsonIgnore]
+        public bool ClickThrough { get; set; }
 
         /// <summary>Re-assert WS_EX_TOPMOST while a game is in the foreground.</summary>
         [JsonPropertyName("stay_in_front")]
@@ -146,6 +150,46 @@ namespace WddmHud.Core
             AllowTrailingCommas = true
         };
 
+        public static HudConfig FromJson(string json)
+        {
+            HudConfig cfg;
+            try
+            {
+                cfg = JsonSerializer.Deserialize<HudConfig>(json, JsonOptions) ?? new HudConfig();
+            }
+            catch
+            {
+                cfg = new HudConfig();
+            }
+
+            cfg.Sanitize();
+            // Belt: JsonIgnore already drops this field, but a future property
+            // rename must still refuse to honor a persisted true.
+            if (cfg.ClickThrough)
+            {
+                Logger.Warn("Ignoring persisted click_through=true (it blocks drag/resize). Auto click-through still applies in game.");
+                cfg.ClickThrough = false;
+            }
+
+            return cfg;
+        }
+
+        public static string ToJson(HudConfig cfg)
+        {
+            ArgumentNullException.ThrowIfNull(cfg);
+            cfg.Sanitize();
+            bool runtimeClick = cfg.ClickThrough;
+            cfg.ClickThrough = false;
+            try
+            {
+                return JsonSerializer.Serialize(cfg, JsonOptions);
+            }
+            finally
+            {
+                cfg.ClickThrough = runtimeClick;
+            }
+        }
+
         public static HudConfig Load()
         {
             string path = AppPaths.ConfigFilePath;
@@ -153,14 +197,9 @@ namespace WddmHud.Core
             {
                 if (File.Exists(path))
                 {
-                    string json = File.ReadAllText(path);
-                    var cfg = JsonSerializer.Deserialize<HudConfig>(json, JsonOptions);
-                    if (cfg != null)
-                    {
-                        cfg.Sanitize();
-                        Logger.Info("Config loaded from " + path);
-                        return cfg;
-                    }
+                    HudConfig cfg = FromJson(File.ReadAllText(path));
+                    Logger.Info("Config loaded from " + path);
+                    return cfg;
                 }
             }
             catch (Exception ex)
@@ -177,10 +216,8 @@ namespace WddmHud.Core
         {
             try
             {
-                Sanitize();
                 string path = AppPaths.ConfigFilePath;
-                string json = JsonSerializer.Serialize(this, JsonOptions);
-                File.WriteAllText(path, json);
+                File.WriteAllText(path, ToJson(this));
                 Logger.Info("Config saved to " + path);
             }
             catch (Exception ex)

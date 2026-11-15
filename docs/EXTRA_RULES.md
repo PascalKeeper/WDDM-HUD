@@ -126,6 +126,8 @@ Before writing new features, re-read:
 - HAGS experiments on this hybrid laptop without explicit approval  
 - Deleting the active power scheme  
 - Network beacons, analytics, auto-updaters  
+- Persisting `click_through: true` (makes drag/resize dead after relaunch; session-only toggle, `JsonIgnore`, `--drag-selftest` must pass)  
+- Shipping `dist\WddmHud.exe` when `WddmHud.exe --drag-selftest` is non-zero  
 
 ---
 

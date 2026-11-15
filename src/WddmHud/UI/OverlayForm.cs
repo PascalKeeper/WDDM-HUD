@@ -274,7 +274,8 @@ namespace WddmHud.UI
             };
 
             UpdateScale();
-            Logger.Info("OverlayForm ready (transparent topmost, design " + DesignWidth + "x" + DesignHeight + ")");
+            Logger.Info("OverlayForm ready (transparent topmost, design " + DesignWidth + "x" + DesignHeight +
+                ", native drag/resize, click_through=" + _config.ClickThrough + ")");
         }
 
         protected override bool ShowWithoutActivation => true;
@@ -441,7 +442,7 @@ namespace WddmHud.UI
                 using var bmp = new Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
                 using (var g = Graphics.FromImage(bmp))
                 {
-                    g.Clear(Color.Transparent);
+                    g.Clear(Color.FromArgb(0, 0, 0, 0));
                     g.SmoothingMode = SmoothingMode.AntiAlias;
                     g.CompositingMode = CompositingMode.SourceOver;
                     g.CompositingQuality = CompositingQuality.HighQuality;
@@ -467,11 +468,13 @@ namespace WddmHud.UI
             var cfg = _paintConfig ?? _config;
             UpdateScale();
             float s = _scale;
-            // Alpha 1 is invisible on the desktop and still a drag target.
-            // A fully clear pixel falls through a layered window.
             if (!EffectiveClickThrough)
             {
-                using var hit = new SolidBrush(Color.FromArgb(1, 0, 0, 0));
+                using var hit = new SolidBrush(Color.FromArgb(
+                    OverlayHitTest.HitPlateAlpha,
+                    OverlayHitTest.HitPlateR,
+                    OverlayHitTest.HitPlateG,
+                    OverlayHitTest.HitPlateB));
                 g.FillRectangle(hit, 0, 0, Width, Height);
                 DrawResizeCorner(g);
             }
@@ -634,13 +637,22 @@ namespace WddmHud.UI
 
         private Rectangle GripRect()
         {
-            int grip = Math.Max(18, (int)(22 * _scale));
-            return new Rectangle(Math.Max(0, ClientSize.Width - grip), Math.Max(0, ClientSize.Height - grip), grip, grip);
+            return OverlayHitTest.GripRect(ClientSize.Width, ClientSize.Height, _scale);
         }
 
         private void DrawResizeCorner(Graphics g)
         {
             Rectangle grip = GripRect();
+            using (var fill = new SolidBrush(Color.FromArgb(40, Accent)))
+            {
+                var tri = new Point[]
+                {
+                    new Point(grip.Right - 2, grip.Bottom - 2),
+                    new Point(grip.Right - 2, grip.Top + 4),
+                    new Point(grip.Left + 4, grip.Bottom - 2)
+                };
+                g.FillPolygon(fill, tri);
+            }
             using var pen = new Pen(Color.FromArgb(210, Accent), 1.5f);
             int right = grip.Right - 3;
             int bottom = grip.Bottom - 3;
@@ -704,19 +716,14 @@ namespace WddmHud.UI
             }
         }
 
-        // ---- drag (moves whole window; does not scramble content) ----
+        // Fallback if a click lands as client input instead of WM_NCHITTEST.
         private void OnDragDown(object? sender, MouseEventArgs e)
         {
             if (e.Button != MouseButtons.Left || EffectiveClickThrough) return;
             if (GripRect().Contains(e.Location))
             {
+                BeginNativeSize();
                 _resizing = true;
-                _userSized = true;
-                _config.UserSizedFrame = true;
-                if (_config.NaturalWidth < 64)
-                    _config.NaturalWidth = Math.Max(64, ClientSize.Width);
-                if (_config.NaturalHeight < 32)
-                    _config.NaturalHeight = Math.Max(32, ClientSize.Height);
                 _dragging = false;
                 _resizeStartSize = Size;
                 _resizeStartCursor = Cursor.Position;
@@ -804,6 +811,8 @@ namespace WddmHud.UI
                 SetWindowLong(Handle, GWL_EXSTYLE, ex);
                 if (_resizeGrip != null)
                     _resizeGrip.Visible = false;
+                Logger.Info("Overlay styles: click_through=" + EffectiveClickThrough +
+                    " user_sized=" + _userSized);
             }
             catch (Exception ex)
             {
@@ -820,7 +829,25 @@ namespace WddmHud.UI
                 _gameClickThroughApplied = false;
             ApplyExtendedStyles();
             try { if (IsHandleCreated) ComposeAndPush(); } catch { /* ignore */ }
-            _config.Save();
+            Logger.Info("Click-through " + (enabled ? "ON (session)" : "OFF") +
+                "; auto_in_game=" + _config.AutoClickThroughInGame);
+            // Do not persist. A saved true value makes drag/resize dead after relaunch.
+        }
+
+        private void BeginNativeSize()
+        {
+            _userSized = true;
+            _config.UserSizedFrame = true;
+            if (_config.NaturalWidth < 64)
+                _config.NaturalWidth = Math.Max(64, ClientSize.Width);
+            if (_config.NaturalHeight < 32)
+                _config.NaturalHeight = Math.Max(32, ClientSize.Height);
+        }
+
+        private static Point ScreenPointFromLParam(IntPtr lParam)
+        {
+            int v = unchecked((int)lParam.ToInt64());
+            return new Point((short)(v & 0xFFFF), (short)((v >> 16) & 0xFFFF));
         }
 
         public void ForceTopMost()
@@ -840,9 +867,60 @@ namespace WddmHud.UI
 
         protected override void WndProc(ref Message m)
         {
+            const int WM_NCHITTEST = 0x0084;
+            const int WM_NCRBUTTONUP = 0x00A5;
+            const int WM_NCLBUTTONDBLCLK = 0x00A3;
+            const int WM_ENTERSIZEMOVE = 0x0231;
+            const int WM_EXITSIZEMOVE = 0x0232;
+            const int WM_SIZING = 0x0214;
             const int WM_WINDOWPOSCHANGING = 0x0046;
             const int WM_ACTIVATE = 0x0006;
             const int WM_ACTIVATEAPP = 0x001C;
+
+            if (m.Msg == WM_NCHITTEST)
+            {
+                try
+                {
+                    Point client = PointToClient(ScreenPointFromLParam(m.LParam));
+                    m.Result = (IntPtr)OverlayHitTest.HitClient(
+                        client.X, client.Y, ClientSize.Width, ClientSize.Height, _scale, EffectiveClickThrough);
+                }
+                catch
+                {
+                    m.Result = (IntPtr)(EffectiveClickThrough
+                        ? OverlayHitTest.HtTransparent
+                        : OverlayHitTest.HtCaption);
+                }
+                return;
+            }
+
+            if (m.Msg == WM_NCLBUTTONDBLCLK)
+            {
+                m.Result = IntPtr.Zero;
+                return;
+            }
+
+            if (m.Msg == WM_NCRBUTTONUP && !EffectiveClickThrough)
+            {
+                try { ContextMenuStrip?.Show(Cursor.Position); } catch { }
+                m.Result = IntPtr.Zero;
+                return;
+            }
+
+            if (m.Msg == WM_SIZING)
+                BeginNativeSize();
+
+            if (m.Msg == WM_ENTERSIZEMOVE)
+                _dragging = true;
+
+            if (m.Msg == WM_EXITSIZEMOVE)
+            {
+                _dragging = false;
+                _resizing = false;
+                PersistGeometry();
+                try { if (IsHandleCreated) ComposeAndPush(); } catch { }
+            }
+
             if (m.Msg == WM_WINDOWPOSCHANGING && Visible && _config.StayInFront && m.LParam != IntPtr.Zero)
             {
                 try

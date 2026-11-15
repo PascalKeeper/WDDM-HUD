@@ -305,7 +305,23 @@ Options:
     }
     $item = Get-Item $exe
     Write-Log ("Dist OK: {0} ({1:N0} bytes, {2})" -f $item.FullName, $item.Length, $item.LastWriteTime) 'OK'
+    Assert-DragResize -ExePath $item.FullName
     return $item.FullName
+}
+
+function Assert-DragResize {
+    param([Parameter(Mandatory)][string]$ExePath)
+    if ($DryRun) {
+        Write-Log "Would run: $ExePath --drag-selftest" 'DRY'
+        return
+    }
+    Write-Log 'Running drag/resize self-test…' 'INFO'
+    $p = Start-Process -FilePath $ExePath -ArgumentList '--drag-selftest' -WorkingDirectory (Split-Path -Parent $ExePath) -Wait -PassThru -WindowStyle Hidden
+    if ($null -eq $p -or $p.ExitCode -ne 0) {
+        $code = if ($null -eq $p) { 'null' } else { $p.ExitCode }
+        throw "Drag/resize self-test failed (exit $code). Refusing to ship a HUD that cannot be dragged. Codes: 1 plate alpha, 2 plate RGB, 3 JSON load stuck true, 4 ToJson mutated runtime, 5 JSON wrote true, 6 not HTCAPTION, 7 not HTBOTTOMRIGHT, 8 not HTTRANSPARENT, 9 crash."
+    }
+    Write-Log 'Drag/resize self-test passed.' 'OK'
 }
 
 function New-Shortcut {

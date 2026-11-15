@@ -13,7 +13,7 @@
     <ApplicationIcon />
     <AssemblyName>WddmHud</AssemblyName>
     <RootNamespace>WddmHud</RootNamespace>
-    <Version>1.0.3</Version>
+    <Version>1.0.5</Version>
     <Authors>Joseph Rocco Peransi</Authors>
     <Company>pascalkeeper</Company>
     <Product>WDDM HUD by pascalkeeper</Product>
@@ -46,4 +46,13 @@
       <LogicalName>WddmHud.Hardware.DellSMM.bin</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
+
+  <!-- Fail the Release build if click-through persistence or hit-test math regresses. -->
+  <Target Name="DragResizeSelfTest" AfterTargets="Build" Condition="'$(Configuration)' == 'Release' And '$(SkipDragSelfTest)' != 'true'">
+    <PropertyGroup>
+      <_DragSelfTestExe>$(TargetDir)$(TargetName).exe</_DragSelfTestExe>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(_DragSelfTestExe)')" Text="Drag/resize self-test exe missing: $(_DragSelfTestExe)" />
+    <Exec Command="&quot;$(_DragSelfTestExe)&quot; --drag-selftest" IgnoreStandardErrorWarningFormat="true" />
+  </Target>
 </Project>
